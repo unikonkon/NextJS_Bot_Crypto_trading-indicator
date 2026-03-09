@@ -1,0 +1,1 @@
+# NextJS_Bot_Crypto_trading-indicator
