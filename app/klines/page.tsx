@@ -17,7 +17,6 @@ import {
   type Trade,
 } from "@/lib/backtest";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardAction } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,10 +34,10 @@ const POPULAR_SYMBOLS = [
 ];
 
 const INTERVAL_GROUPS: Record<string, Interval[]> = {
-  "Seconds": ["1s"],
-  "Minutes": ["1m", "3m", "5m", "15m", "30m"],
-  "Hours": ["1h", "2h", "4h", "6h", "8h", "12h"],
-  "Days+": ["1d", "3d", "1w", "1M"],
+  "วินาที": ["1s"],
+  "นาที": ["1m", "3m", "5m", "15m", "30m"],
+  "ชั่วโมง": ["1h", "2h", "4h", "6h", "8h", "12h"],
+  "วัน+": ["1d", "3d", "1w", "1M"],
 };
 
 // ─── Formatting ────────────────────────────────────────────────
@@ -85,8 +84,7 @@ function MiniCandle({ kline }: { kline: KlineData }) {
 }
 
 // ─── Equity Chart (pure CSS bars) ──────────────────────────────
-function EquityChart({ curve, trades }: { curve: number[]; trades: Trade[] }) {
-  // Sample to max ~200 points
+function EquityChart({ curve }: { curve: number[] }) {
   const step = Math.max(1, Math.floor(curve.length / 200));
   const sampled = curve.filter((_, i) => i % step === 0 || i === curve.length - 1);
   const max = Math.max(...sampled, 0.01);
@@ -96,10 +94,8 @@ function EquityChart({ curve, trades }: { curve: number[]; trades: Trade[] }) {
 
   return (
     <div className="relative h-32 w-full">
-      {/* Zero line */}
       <div className="absolute left-0 right-0 border-t border-dashed border-muted-foreground/30" style={{ top: `${zeroY}%` }} />
       <div className="absolute left-1 text-[9px] text-muted-foreground" style={{ top: `${Math.max(zeroY - 5, 0)}%` }}>0%</div>
-      {/* Bars */}
       <div className="flex h-full items-end gap-px">
         {sampled.map((val, i) => {
           const h = Math.abs(val) / range * 100;
@@ -121,7 +117,6 @@ function EquityChart({ curve, trades }: { curve: number[]; trades: Trade[] }) {
           );
         })}
       </div>
-      {/* Labels */}
       <div className="absolute top-0 right-1 text-[9px] text-emerald-500 tabular-nums">+{max.toFixed(1)}%</div>
       <div className="absolute bottom-0 right-1 text-[9px] text-red-500 tabular-nums">{min.toFixed(1)}%</div>
     </div>
@@ -182,9 +177,9 @@ export default function KlinesPage() {
     finally { setLoading(false); }
   }, [activeSymbol, interval, limit]);
 
-  // ─── Fetch Backtest Historical ──────────────────────────────
-  const fetchBacktest = useCallback(async () => {
-    if (!startTime) { setError("Start time is required"); return; }
+  // ─── Fetch Historical ──────────────────────────────────────
+  const fetchHistorical = useCallback(async () => {
+    if (!startTime) { setError("กรุณาระบุเวลาเริ่มต้น"); return; }
     setLoading(true); setError(null); setKlines([]); setBtResult(null);
     setBacktestProgress({ current: 0 });
     const controller = new AbortController();
@@ -223,10 +218,9 @@ export default function KlinesPage() {
 
   // ─── Run Backtest ───────────────────────────────────────────
   const runBt = useCallback(() => {
-    if (klines.length < 50) { setError("Need at least 50 candles for backtest"); return; }
+    if (klines.length < 50) { setError("ต้องมีอย่างน้อย 50 แท่งเทียนเพื่อรัน Backtest"); return; }
     setBtRunning(true);
     setError(null);
-    // run in microtask to allow UI update
     setTimeout(() => {
       try {
         const result = runBacktest(klines, strategyId, {}, parseFloat(feesPct) || 0.1);
@@ -260,217 +254,180 @@ export default function KlinesPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Binance Klines & Backtest</h1>
-            <p className="text-xs text-muted-foreground">Trading Indicators + Strategy Backtest with P&L</p>
+            <p className="text-xs text-muted-foreground">ตัวชี้วัดการเทรด + ทดสอบกลยุทธ์ย้อนหลังพร้อมกำไร/ขาดทุน</p>
           </div>
           <div className="flex items-center gap-2">
             {lastFetch && (
               <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                Last: {lastFetch.toLocaleTimeString()}
+                ล่าสุด: {lastFetch.toLocaleTimeString()}
               </Badge>
             )}
             {klines.length > 0 && (
-              <Badge variant="secondary">{klines.length.toLocaleString()} candles</Badge>
+              <Badge variant="secondary">{klines.length.toLocaleString()} แท่งเทียน</Badge>
             )}
           </div>
         </div>
         <Separator />
 
-        {/* Tabs */}
-        <Tabs defaultValue="realtime">
-          <TabsList variant="line">
-            <TabsTrigger value="realtime">Real-time Indicators</TabsTrigger>
-            <TabsTrigger value="backtest">Backtest & P/L</TabsTrigger>
-          </TabsList>
-
-          {/* ═══ REAL-TIME TAB ═══ */}
-          <TabsContent value="realtime">
-            <div className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
-                {/* Config */}
-                <Card size="sm">
-                  <CardHeader>
-                    <CardTitle>Configuration</CardTitle>
-                    <CardDescription>Fetch latest candles for indicator calculation</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex flex-wrap gap-3">
-                      <Field label="Symbol">
-                        <Select value={symbol} onValueChange={(v) => { if (v) { setSymbol(v); setCustomSymbol(""); } }}>
-                          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup><SelectLabel>Popular</SelectLabel>
-                              {POPULAR_SYMBOLS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field label="Custom">
-                        <Input placeholder="e.g. PEPEUSDT" value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} className="w-32" />
-                      </Field>
-                      <Field label="Interval">
-                        <Select value={interval} onValueChange={(v) => { if (v) setInterval(v as Interval); }}>
-                          <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(INTERVAL_GROUPS).map(([g, ints]) => (
-                              <SelectGroup key={g}><SelectLabel>{g}</SelectLabel>
-                                {ints.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
-                              </SelectGroup>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field label="Limit">
-                        <Select value={limit} onValueChange={(v) => { if (v) setLimit(v); }}>
-                          <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {["50","100","200","500","1000"].map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                    </div>
-                    <Button onClick={fetchRealtime} disabled={loading}>
-                      {loading ? "Fetching..." : "Fetch Klines"}
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Indicator Requirements */}
-                <Card size="sm">
-                  <CardHeader><CardTitle>Indicator Status</CardTitle></CardHeader>
-                  <CardContent>
-                    <div className="space-y-1">
-                      {Object.entries(INDICATOR_REQUIREMENTS).map(([name, { minBars }]) => {
-                        const ok = klines.length >= minBars;
-                        return (
-                          <div key={name} className="flex items-center justify-between text-[11px]">
-                            <span className="text-muted-foreground">{name}</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="tabular-nums">{minBars}</span>
-                              {klines.length > 0 && <span className={`size-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-red-500"}`} />}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {klines.length > 0 && (
-                      <p className="mt-2 text-[10px] text-muted-foreground">
-                        {Object.values(INDICATOR_REQUIREMENTS).filter(({ minBars }) => klines.length >= minBars).length}/{Object.keys(INDICATOR_REQUIREMENTS).length} ready
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+        {/* ═══ CONFIG ═══ */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_350px]">
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>ตั้งค่า</CardTitle>
+              <CardDescription>เลือกคู่เหรียญและช่วงเวลา แล้วดึงข้อมูลแบบเรียลไทม์หรือย้อนหลัง</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Shared: Symbol / Custom / Interval */}
+              <div className="flex flex-wrap gap-3 items-center">
+                <Field label="คู่เหรียญ">
+                  <Select value={symbol} onValueChange={(v) => { if (v) { setSymbol(v); setCustomSymbol(""); } }}>
+                    <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup><SelectLabel>ยอดนิยม</SelectLabel>
+                        {POPULAR_SYMBOLS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="">
+                  <p className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">กำหนดเอง</p>
+                  <Input placeholder="เช่น PEPEUSDT" value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} className="w-36" />
+                </Field>
+                <Field label="ช่วงเวลา">
+                  <Select value={interval} onValueChange={(v) => { if (v) setInterval(v as Interval); }}>
+                    <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(INTERVAL_GROUPS).map(([g, ints]) => (
+                        <SelectGroup key={g}><SelectLabel>{g}</SelectLabel>
+                          {ints.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
               </div>
 
-              {/* Error */}
-              {error && <ErrorCard message={error} />}
+              <Separator />
 
-              {/* Summary */}
-              {summary && <SummaryCards summary={summary} />}
-
-              {/* Indicator Values */}
-              {indicators && <IndicatorPanel indicators={indicators} klines={klines} />}
-
-              {/* Kline Table */}
-              <KlineTable klines={klines} loading={loading} />
-            </div>
-          </TabsContent>
-
-          {/* ═══ BACKTEST TAB ═══ */}
-          <TabsContent value="backtest">
-            <div className="mt-4 space-y-4">
-              {/* Backtest Config */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-                <Card size="sm">
-                  <CardHeader>
-                    <CardTitle>Historical Data</CardTitle>
-                    <CardDescription>Fetch candles then run strategy backtest</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex flex-wrap gap-3">
-                      <Field label="Symbol">
-                        <Select value={symbol} onValueChange={(v) => { if (v) { setSymbol(v); setCustomSymbol(""); } }}>
-                          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup><SelectLabel>Popular</SelectLabel>
-                              {POPULAR_SYMBOLS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field label="Custom">
-                        <Input placeholder="e.g. PEPEUSDT" value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} className="w-32" />
-                      </Field>
-                      <Field label="Interval">
-                        <Select value={interval} onValueChange={(v) => { if (v) setInterval(v as Interval); }}>
-                          <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(INTERVAL_GROUPS).map(([g, ints]) => (
-                              <SelectGroup key={g}><SelectLabel>{g}</SelectLabel>
-                                {ints.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
-                              </SelectGroup>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field label="Start Date">
-                        <Input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-48" />
-                      </Field>
-                      <Field label="End Date">
-                        <Input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-48" />
-                      </Field>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button onClick={fetchBacktest} disabled={loading}>
-                        {loading ? "Fetching..." : "Fetch Historical"}
-                      </Button>
-                      {loading && (
-                        <Button variant="destructive" size="sm" onClick={() => abortRef.current?.abort()}>Cancel</Button>
-                      )}
-                      {backtestProgress && (
-                        <span className="text-[10px] text-muted-foreground animate-pulse">
-                          {backtestProgress.current.toLocaleString()} candles...
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Strategy Selection */}
-                <Card size="sm">
-                  <CardHeader><CardTitle>Strategy & Run</CardTitle></CardHeader>
-                  <CardContent className="space-y-3">
-                    <Field label="Strategy">
-                      <Select value={strategyId} onValueChange={(v) => { if (v) setStrategyId(v as StrategyId); }}>
-                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              {/* Two fetch modes side by side */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {/* Real-time fetch */}
+                <div className="space-y-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">เรียลไทม์</p>
+                  <div className="flex items-end gap-2">
+                    <Field label="จำนวน">
+                      <Select value={limit} onValueChange={(v) => { if (v) setLimit(v); }}>
+                        <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                          {["50", "100", "200", "500", "1000"].map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </Field>
-                    <p className="text-[10px] text-muted-foreground">
-                      {STRATEGIES.find(s => s.id === strategyId)?.description}
-                    </p>
-                    <Field label="Fees per trade (%)">
-                      <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-24" />
-                    </Field>
-                    <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="w-full">
-                      {btRunning ? "Running..." : `Run Backtest (${klines.length} candles)`}
+                    <Button onClick={fetchRealtime} disabled={loading} className="h-9">
+                      {loading ? "กำลังดึง..." : "ดึงข้อมูลล่าสุด"}
                     </Button>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
+
+                {/* Historical fetch */}
+                <div className="space-y-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ข้อมูลย้อนหลัง</p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field label="เริ่มต้น">
+                      <Input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-44" />
+                    </Field>
+                    <Field label="สิ้นสุด">
+                      <Input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-44" />
+                    </Field>
+                    <Button onClick={fetchHistorical} disabled={loading} className="h-9">
+                      {loading ? "กำลังดึง..." : "ดึงข้อมูลย้อนหลัง"}
+                    </Button>
+                    {loading && (
+                      <Button variant="destructive" size="sm" onClick={() => abortRef.current?.abort()}>ยกเลิก</Button>
+                    )}
+                  </div>
+                  {backtestProgress && (
+                    <span className="text-[10px] text-muted-foreground animate-pulse">
+                      {backtestProgress.current.toLocaleString()} แท่งเทียน...
+                    </span>
+                  )}
+                </div>
               </div>
+            </CardContent>
+          </Card>
 
-              {error && <ErrorCard message={error} />}
-              {summary && <SummaryCards summary={summary} />}
+          {/* Indicator Status */}
+          <Card size="sm">
+            <CardHeader><CardTitle>สถานะตัวชี้วัด</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                {Object.entries(INDICATOR_REQUIREMENTS).map(([name, { minBars }]) => {
+                  const ok = klines.length >= minBars;
+                  return (
+                    <div key={name} className="flex items-center justify-between text-[11px]">
+                      <span className="text-muted-foreground">{name}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="tabular-nums">{minBars}</span>
+                        {klines.length > 0 && <span className={`size-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-red-500"}`} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {klines.length > 0 && (
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  {Object.values(INDICATOR_REQUIREMENTS).filter(({ minBars }) => klines.length >= minBars).length}/{Object.keys(INDICATOR_REQUIREMENTS).length} พร้อมใช้งาน
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-              {/* Backtest Results */}
-              {btResult && <BacktestResults result={btResult} klines={klines} />}
+        {/* Error */}
+        {error && <ErrorCard message={error} />}
 
-              {/* Kline Table */}
-              <KlineTable klines={klines} loading={loading} signals={btResult?.signals} />
-            </div>
-          </TabsContent>
-        </Tabs>
+        {/* Summary */}
+        {summary && <SummaryCards summary={summary} />}
+
+        {/* Indicator Values */}
+        {indicators && <IndicatorPanel indicators={indicators} klines={klines} />}
+
+        {/* ═══ BACKTEST ═══ */}
+        {klines.length > 0 && (
+          <Card size="sm">
+            <CardHeader className="border-b">
+              <CardTitle>ทดสอบกลยุทธ์ย้อนหลัง กับ Indicator</CardTitle>
+              <CardDescription>รันกลยุทธ์ทดสอบบนข้อมูล {klines.length.toLocaleString()} แท่งเทียนที่โหลดไว้</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <Field label="กลยุทธ์ Indicator">
+                  <Select value={strategyId} onValueChange={(v) => { if (v) setStrategyId(v as StrategyId); }}>
+                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="ค่าธรรมเนียม (%)">
+                  <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
+                </Field>
+                <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
+                  {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                </Button>
+                <p className="text-[10px] text-muted-foreground self-center">
+                  {STRATEGIES.find(s => s.id === strategyId)?.description}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Backtest Results */}
+        {btResult && <BacktestResults result={btResult} />}
+
+        {/* Kline Table */}
+        <KlineTable klines={klines} loading={loading} signals={btResult?.signals} />
       </div>
     </div>
   );
@@ -499,12 +456,12 @@ function ErrorCard({ message }: { message: string }) {
 
 function SummaryCards({ summary }: { summary: { lastClose: number; pctChange: number; highest: number; lowest: number; totalVol: number; avgVol: number } }) {
   const items = [
-    { label: "Last Close", value: fmtPrice(summary.lastClose), color: "" },
-    { label: "Change", value: `${summary.pctChange >= 0 ? "+" : ""}${summary.pctChange.toFixed(2)}%`, color: pnlColor(summary.pctChange) },
-    { label: "Highest", value: fmtPrice(summary.highest), color: "text-emerald-500" },
-    { label: "Lowest", value: fmtPrice(summary.lowest), color: "text-red-500" },
-    { label: "Total Vol", value: fmtNum(summary.totalVol), color: "" },
-    { label: "Avg Vol", value: fmtNum(summary.avgVol), color: "" },
+    { label: "ราคาปิดล่าสุด", value: fmtPrice(summary.lastClose), color: "" },
+    { label: "เปลี่ยนแปลง", value: `${summary.pctChange >= 0 ? "+" : ""}${summary.pctChange.toFixed(2)}%`, color: pnlColor(summary.pctChange) },
+    { label: "สูงสุด", value: fmtPrice(summary.highest), color: "text-emerald-500" },
+    { label: "ต่ำสุด", value: fmtPrice(summary.lowest), color: "text-red-500" },
+    { label: "ปริมาณรวม", value: fmtNum(summary.totalVol), color: "" },
+    { label: "ปริมาณเฉลี่ย", value: fmtNum(summary.avgVol), color: "" },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -530,64 +487,64 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
   // RSI
   const rsiVal = indicators.rsi[last];
   if (rsiVal !== null) {
-    const sig = rsiVal < 30 ? "Oversold (BUY)" : rsiVal > 70 ? "Overbought (SELL)" : "Neutral";
+    const sig = rsiVal < 30 ? "ขายมากเกินไป (ซื้อ)" : rsiVal > 70 ? "ซื้อมากเกินไป (ขาย)" : "ปกติ";
     rows.push({ name: "RSI(14)", value: rsiVal.toFixed(2), signal: sig, color: rsiVal < 30 ? "text-emerald-500" : rsiVal > 70 ? "text-red-500" : "text-muted-foreground" });
   }
 
   // MACD
-  const m = indicators.macd.macd[last], s = indicators.macd.signal[last], h = indicators.macd.histogram[last];
+  const m = indicators.macd.macd[last], s = indicators.macd.signal[last];
   if (m !== null && s !== null) {
-    const sig = m > s ? "Bullish" : "Bearish";
+    const sig = m > s ? "ขาขึ้น" : "ขาลง";
     rows.push({ name: "MACD", value: `${m.toFixed(2)} / ${s.toFixed(2)}`, signal: sig, color: m > s ? "text-emerald-500" : "text-red-500" });
   }
 
   // EMA 50/200
   const e50 = indicators.ema50[last], e200 = indicators.ema200[last];
-  if (e50 !== null) rows.push({ name: "EMA(50)", value: fmtPrice(e50), signal: c > e50 ? "Above" : "Below", color: c > e50 ? "text-emerald-500" : "text-red-500" });
-  if (e200 !== null) rows.push({ name: "EMA(200)", value: fmtPrice(e200), signal: c > e200 ? "Above" : "Below", color: c > e200 ? "text-emerald-500" : "text-red-500" });
+  if (e50 !== null) rows.push({ name: "EMA(50)", value: fmtPrice(e50), signal: c > e50 ? "อยู่เหนือ" : "อยู่ใต้", color: c > e50 ? "text-emerald-500" : "text-red-500" });
+  if (e200 !== null) rows.push({ name: "EMA(200)", value: fmtPrice(e200), signal: c > e200 ? "อยู่เหนือ" : "อยู่ใต้", color: c > e200 ? "text-emerald-500" : "text-red-500" });
   if (e50 !== null && e200 !== null) {
-    rows.push({ name: "Golden Cross", value: e50 > e200 ? "Yes" : "No", signal: e50 > e200 ? "Bullish" : "Bearish", color: e50 > e200 ? "text-emerald-500" : "text-red-500" });
+    rows.push({ name: "Golden Cross", value: e50 > e200 ? "ใช่" : "ไม่", signal: e50 > e200 ? "ขาขึ้น" : "ขาลง", color: e50 > e200 ? "text-emerald-500" : "text-red-500" });
   }
 
   // BB
-  const bbU = indicators.bb.upper[last], bbL = indicators.bb.lower[last], bbM = indicators.bb.middle[last];
+  const bbU = indicators.bb.upper[last], bbL = indicators.bb.lower[last];
   if (bbU !== null && bbL !== null) {
-    const sig = c >= bbU ? "Near Upper (SELL)" : c <= bbL ? "Near Lower (BUY)" : "In Band";
+    const sig = c >= bbU ? "ใกล้แถบบน (ขาย)" : c <= bbL ? "ใกล้แถบล่าง (ซื้อ)" : "อยู่ในแถบ";
     rows.push({ name: "BB(20)", value: `${fmtPrice(bbU)} / ${fmtPrice(bbL)}`, signal: sig, color: c >= bbU ? "text-red-500" : c <= bbL ? "text-emerald-500" : "text-muted-foreground" });
   }
 
   // ADX
   const adxVal = indicators.adx.adx[last], pdi = indicators.adx.plusDI[last], mdi = indicators.adx.minusDI[last];
   if (adxVal !== null && pdi !== null && mdi !== null) {
-    const trend = adxVal > 25 ? (pdi > mdi ? "Strong Uptrend" : "Strong Downtrend") : "Weak/No Trend";
+    const trend = adxVal > 25 ? (pdi > mdi ? "แนวโน้มขึ้นแรง" : "แนวโน้มลงแรง") : "ไม่มีแนวโน้มชัดเจน";
     rows.push({ name: "ADX(14)", value: `${adxVal.toFixed(1)} (+DI:${pdi.toFixed(1)} -DI:${mdi.toFixed(1)})`, signal: trend, color: adxVal > 25 && pdi > mdi ? "text-emerald-500" : adxVal > 25 ? "text-red-500" : "text-muted-foreground" });
   }
 
   // ATR
   const atrVal = indicators.atr[last];
-  if (atrVal !== null) rows.push({ name: "ATR(14)", value: fmtPrice(atrVal), signal: `${((atrVal / c) * 100).toFixed(2)}% volatility`, color: "text-muted-foreground" });
+  if (atrVal !== null) rows.push({ name: "ATR(14)", value: fmtPrice(atrVal), signal: `ความผันผวน ${((atrVal / c) * 100).toFixed(2)}%`, color: "text-muted-foreground" });
 
   // OBV
   const obvVal = indicators.obv[last];
   const obvPrev = last > 0 ? indicators.obv[last - 1] : obvVal;
-  rows.push({ name: "OBV", value: fmtNum(obvVal), signal: obvVal > obvPrev ? "Rising" : "Falling", color: obvVal > obvPrev ? "text-emerald-500" : "text-red-500" });
+  rows.push({ name: "OBV", value: fmtNum(obvVal), signal: obvVal > obvPrev ? "เพิ่มขึ้น" : "ลดลง", color: obvVal > obvPrev ? "text-emerald-500" : "text-red-500" });
 
   // MFI
   const mfiVal = indicators.mfi[last];
   if (mfiVal !== null) {
-    const sig = mfiVal < 20 ? "Oversold (BUY)" : mfiVal > 80 ? "Overbought (SELL)" : "Neutral";
+    const sig = mfiVal < 20 ? "ขายมากเกินไป (ซื้อ)" : mfiVal > 80 ? "ซื้อมากเกินไป (ขาย)" : "ปกติ";
     rows.push({ name: "MFI(14)", value: mfiVal.toFixed(2), signal: sig, color: mfiVal < 20 ? "text-emerald-500" : mfiVal > 80 ? "text-red-500" : "text-muted-foreground" });
   }
 
   // VWAP
   const vwapVal = indicators.vwap[last];
-  rows.push({ name: "VWAP", value: fmtPrice(vwapVal), signal: c > vwapVal ? "Above (Bullish)" : "Below (Bearish)", color: c > vwapVal ? "text-emerald-500" : "text-red-500" });
+  rows.push({ name: "VWAP", value: fmtPrice(vwapVal), signal: c > vwapVal ? "อยู่เหนือ (ขาขึ้น)" : "อยู่ใต้ (ขาลง)", color: c > vwapVal ? "text-emerald-500" : "text-red-500" });
 
   // Ichimoku
   const ich = indicators.ichimoku;
   if (ich.tenkan[last] !== null && ich.kijun[last] !== null) {
     const cloudTop = Math.max(ich.senkouA[last] ?? 0, ich.senkouB[last] ?? 0);
-    const sig = c > cloudTop ? "Above Cloud (Bullish)" : "Below Cloud (Bearish)";
+    const sig = c > cloudTop ? "เหนือเมฆ (ขาขึ้น)" : "ใต้เมฆ (ขาลง)";
     rows.push({ name: "Ichimoku", value: `T:${fmtPrice(ich.tenkan[last]!)} K:${fmtPrice(ich.kijun[last]!)}`, signal: sig, color: c > cloudTop ? "text-emerald-500" : "text-red-500" });
   }
 
@@ -598,12 +555,12 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
   const cdcSignal = cdc.signal[last];
   if (cdcZone !== null) {
     const zoneLabels: Record<string, string> = {
-      green: "Green (Buy Zone)",
-      blue: "Blue (Pre Buy 2)",
-      lightblue: "Light Blue (Pre Buy 1)",
-      red: "Red (Sell Zone)",
-      orange: "Orange (Pre Sell 2)",
-      yellow: "Yellow (Pre Sell 1)",
+      green: "เขียว (โซนซื้อ)",
+      blue: "น้ำเงิน (เตรียมซื้อ 2)",
+      lightblue: "ฟ้าอ่อน (เตรียมซื้อ 1)",
+      red: "แดง (โซนขาย)",
+      orange: "ส้ม (เตรียมขาย 2)",
+      yellow: "เหลือง (เตรียมขาย 1)",
     };
     const zoneColors: Record<string, string> = {
       green: "text-emerald-500",
@@ -627,14 +584,14 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
 
   return (
     <Card size="sm">
-      <CardHeader className="border-b"><CardTitle>Live Indicator Values</CardTitle></CardHeader>
+      <CardHeader className="border-b"><CardTitle>ค่าตัวชี้วัด</CardTitle></CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Indicator</TableHead>
-              <TableHead>Value</TableHead>
-              <TableHead>Signal</TableHead>
+              <TableHead>ตัวชี้วัด</TableHead>
+              <TableHead>ค่า</TableHead>
+              <TableHead>สัญญาณ</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -653,7 +610,7 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
 }
 
 // ─── Backtest Results ──────────────────────────────────────────
-function BacktestResults({ result, klines }: { result: BacktestResult; klines: KlineData[] }) {
+function BacktestResults({ result }: { result: BacktestResult }) {
   const [tradePage, setTradePage] = useState(0);
   const tradePageSize = 20;
   const totalTradePages = Math.ceil(result.trades.length / tradePageSize);
@@ -664,20 +621,23 @@ function BacktestResults({ result, klines }: { result: BacktestResult; klines: K
   return (
     <div className="space-y-4">
       {/* P&L Summary */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Total P&L" value={`${result.totalPnlPct >= 0 ? "+" : ""}${result.totalPnlPct.toFixed(2)}%`} color={pnlColor(result.totalPnlPct)} bg={pnlBg(result.totalPnlPct)} />
-        <StatCard label="Buy & Hold" value={`${result.buyAndHoldPct >= 0 ? "+" : ""}${result.buyAndHoldPct.toFixed(2)}%`} color={pnlColor(result.buyAndHoldPct)} bg={pnlBg(result.buyAndHoldPct)} />
-        <StatCard label="Win Rate" value={`${result.winRate.toFixed(1)}%`} color={result.winRate >= 50 ? "text-emerald-500" : "text-red-500"} />
-        <StatCard label="Trades" value={`${result.totalTrades} (W:${result.wins} L:${result.losses})`} />
-        <StatCard label="Profit Factor" value={result.profitFactor === Infinity ? "INF" : result.profitFactor.toFixed(2)} color={result.profitFactor > 1 ? "text-emerald-500" : "text-red-500"} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="กำไร/ขาดทุนรวม" value={`${result.totalPnlPct >= 0 ? "+" : ""}${result.totalPnlPct.toFixed(2)}%`} color={pnlColor(result.totalPnlPct)} bg={pnlBg(result.totalPnlPct)} />
+        <StatCard label="ซื้อแล้วถือ" value={`${result.buyAndHoldPct >= 0 ? "+" : ""}${result.buyAndHoldPct.toFixed(2)}%`} color={pnlColor(result.buyAndHoldPct)} bg={pnlBg(result.buyAndHoldPct)} />
+        <StatCard label="อัตราชนะ" value={`${result.winRate.toFixed(1)}%`} color={result.winRate >= 50 ? "text-emerald-500" : "text-red-500"} />
+        <StatCard label="จำนวนเทรด" value={`${result.totalTrades} (ชนะ:${result.wins} แพ้:${result.losses})`} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Avg Win" value={`+${result.avgWinPct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
-        <StatCard label="Avg Loss" value={`${result.avgLossPct.toFixed(2)}%`} color="text-red-500" size="sm" />
-        <StatCard label="Best Trade" value={`+${result.bestTradePct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
-        <StatCard label="Worst Trade" value={`${result.worstTradePct.toFixed(2)}%`} color="text-red-500" size="sm" />
-        <StatCard label="Max Drawdown" value={`-${result.maxDrawdownPct.toFixed(2)}%`} color="text-red-500" size="sm" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="กำไรเฉลี่ย" value={`+${result.avgWinPct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+        <StatCard label="ขาดทุนเฉลี่ย" value={`${result.avgLossPct.toFixed(2)}%`} color="text-red-500" size="sm" />
+        <StatCard label="เทรดที่ดีที่สุด" value={`+${result.bestTradePct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+        <StatCard label="เทรดที่แย่ที่สุด" value={`${result.worstTradePct.toFixed(2)}%`} color="text-red-500" size="sm" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3">
+        <StatCard label="Profit Factor" value={result.profitFactor === Infinity ? "INF" : result.profitFactor.toFixed(2)} color={result.profitFactor > 1 ? "text-emerald-500" : "text-red-500"} />
+        <StatCard label="Drawdown สูงสุด" value={`-${result.maxDrawdownPct.toFixed(2)}%`} color="text-red-500" size="sm" />
         <StatCard label="Sharpe" value={result.sharpeRatio.toFixed(3)} color={result.sharpeRatio > 0 ? "text-emerald-500" : "text-red-500"} size="sm" />
       </div>
 
@@ -686,11 +646,11 @@ function BacktestResults({ result, klines }: { result: BacktestResult; klines: K
         <CardContent className="py-3">
           <div className="flex items-center gap-3 text-xs">
             <span className={`text-sm font-semibold ${strategyBetter ? "text-emerald-500" : "text-red-500"}`}>
-              {strategyBetter ? "Strategy BEATS Buy & Hold" : "Buy & Hold BEATS Strategy"}
+              {strategyBetter ? "กลยุทธ์ชนะ ซื้อแล้วถือ" : "ซื้อแล้วถือ ชนะกลยุทธ์"}
             </span>
             <span className="text-muted-foreground">
-              Strategy: {result.totalPnlPct >= 0 ? "+" : ""}{result.totalPnlPct.toFixed(2)}% vs B&H: {result.buyAndHoldPct >= 0 ? "+" : ""}{result.buyAndHoldPct.toFixed(2)}%
-              ({strategyBetter ? "+" : ""}{(result.totalPnlPct - result.buyAndHoldPct).toFixed(2)}% diff)
+              กลยุทธ์: {result.totalPnlPct >= 0 ? "+" : ""}{result.totalPnlPct.toFixed(2)}% vs ซื้อถือ: {result.buyAndHoldPct >= 0 ? "+" : ""}{result.buyAndHoldPct.toFixed(2)}%
+              (ต่าง {strategyBetter ? "+" : ""}{(result.totalPnlPct - result.buyAndHoldPct).toFixed(2)}%)
             </span>
           </div>
         </CardContent>
@@ -698,23 +658,23 @@ function BacktestResults({ result, klines }: { result: BacktestResult; klines: K
 
       {/* Equity Curve */}
       <Card size="sm">
-        <CardHeader className="border-b"><CardTitle>Equity Curve (Cumulative P&L %)</CardTitle></CardHeader>
+        <CardHeader className="border-b"><CardTitle>กราฟเงินทุน (กำไร/ขาดทุนสะสม %)</CardTitle></CardHeader>
         <CardContent className="pt-3">
-          <EquityChart curve={result.equityCurve} trades={result.trades} />
+          <EquityChart curve={result.equityCurve} />
         </CardContent>
       </Card>
 
       {/* Trade History */}
       <Card size="sm">
         <CardHeader className="border-b">
-          <CardTitle>Trade History</CardTitle>
-          <CardDescription>{result.trades.length} trades total</CardDescription>
+          <CardTitle>ประวัติการเทรด</CardTitle>
+          <CardDescription>ทั้งหมด {result.trades.length} รายการ</CardDescription>
           {totalTradePages > 1 && (
             <CardAction>
               <div className="flex items-center gap-1.5">
-                <Button variant="outline" size="xs" onClick={() => setTradePage(p => Math.max(0, p - 1))} disabled={tradePage === 0}>Prev</Button>
+                <Button variant="outline" size="xs" onClick={() => setTradePage(p => Math.max(0, p - 1))} disabled={tradePage === 0}>ก่อนหน้า</Button>
                 <span className="text-[10px] tabular-nums text-muted-foreground">{tradePage + 1}/{totalTradePages}</span>
-                <Button variant="outline" size="xs" onClick={() => setTradePage(p => Math.min(totalTradePages - 1, p + 1))} disabled={tradePage >= totalTradePages - 1}>Next</Button>
+                <Button variant="outline" size="xs" onClick={() => setTradePage(p => Math.min(totalTradePages - 1, p + 1))} disabled={tradePage >= totalTradePages - 1}>ถัดไป</Button>
               </div>
             </CardAction>
           )}
@@ -724,13 +684,13 @@ function BacktestResults({ result, klines }: { result: BacktestResult; klines: K
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8">#</TableHead>
-                <TableHead>Entry Time</TableHead>
-                <TableHead className="text-right">Entry Price</TableHead>
-                <TableHead>Exit Time</TableHead>
-                <TableHead className="text-right">Exit Price</TableHead>
-                <TableHead className="text-right">P&L %</TableHead>
-                <TableHead className="text-right">Bars</TableHead>
-                <TableHead>Reason</TableHead>
+                <TableHead>เวลาเข้า</TableHead>
+                <TableHead className="text-right">ราคาเข้า</TableHead>
+                <TableHead>เวลาออก</TableHead>
+                <TableHead className="text-right">ราคาออก</TableHead>
+                <TableHead className="text-right">กำไร/ขาดทุน %</TableHead>
+                <TableHead className="text-right">แท่ง</TableHead>
+                <TableHead>เหตุผล</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -792,7 +752,7 @@ function KlineTable({ klines, loading, signals }: { klines: KlineData[]; loading
     return (
       <Card size="sm">
         <CardContent className="py-12 text-center text-xs text-muted-foreground">
-          No data yet. Configure parameters and click Fetch.
+          ยังไม่มีข้อมูล ตั้งค่าพารามิเตอร์แล้วกดดึงข้อมูล
         </CardContent>
       </Card>
     );
@@ -801,13 +761,13 @@ function KlineTable({ klines, loading, signals }: { klines: KlineData[]; loading
   return (
     <Card size="sm">
       <CardHeader className="border-b">
-        <CardTitle>Candlestick Data</CardTitle>
-        <CardDescription>{klines.length.toLocaleString()} candles — {fmtFullDate(klines[0].openTime)} to {fmtFullDate(klines[klines.length - 1].closeTime)}</CardDescription>
+        <CardTitle>ข้อมูลแท่งเทียน</CardTitle>
+        <CardDescription>{klines.length.toLocaleString()} แท่ง — {fmtFullDate(klines[0].openTime)} ถึง {fmtFullDate(klines[klines.length - 1].closeTime)}</CardDescription>
         <CardAction>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>Prev</Button>
+            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>ก่อนหน้า</Button>
             <span className="text-[10px] tabular-nums text-muted-foreground">{page + 1}/{totalPages}</span>
-            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next</Button>
+            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>ถัดไป</Button>
           </div>
         </CardAction>
       </CardHeader>
@@ -816,15 +776,15 @@ function KlineTable({ klines, loading, signals }: { klines: KlineData[]; loading
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">#</TableHead>
-              <TableHead>Open Time</TableHead>
+              <TableHead>เวลาเปิด</TableHead>
               <TableHead className="w-6"></TableHead>
-              <TableHead className="text-right">Open</TableHead>
-              <TableHead className="text-right">High</TableHead>
-              <TableHead className="text-right">Low</TableHead>
-              <TableHead className="text-right">Close</TableHead>
-              <TableHead className="text-right">Change</TableHead>
-              <TableHead className="text-right">Volume</TableHead>
-              {signals && <TableHead className="text-center">Signal</TableHead>}
+              <TableHead className="text-right">เปิด</TableHead>
+              <TableHead className="text-right">สูงสุด</TableHead>
+              <TableHead className="text-right">ต่ำสุด</TableHead>
+              <TableHead className="text-right">ปิด</TableHead>
+              <TableHead className="text-right">เปลี่ยนแปลง</TableHead>
+              <TableHead className="text-right">ปริมาณ</TableHead>
+              {signals && <TableHead className="text-center">สัญญาณ</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -861,10 +821,10 @@ function KlineTable({ klines, loading, signals }: { klines: KlineData[]; loading
             {page * pageSize + 1}-{Math.min((page + 1) * pageSize, klines.length)} of {klines.length.toLocaleString()}
           </span>
           <div className="flex gap-1">
-            <Button variant="outline" size="xs" onClick={() => setPage(0)} disabled={page === 0}>First</Button>
-            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>Prev</Button>
-            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next</Button>
-            <Button variant="outline" size="xs" onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}>Last</Button>
+            <Button variant="outline" size="xs" onClick={() => setPage(0)} disabled={page === 0}>แรก</Button>
+            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>ก่อนหน้า</Button>
+            <Button variant="outline" size="xs" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>ถัดไป</Button>
+            <Button variant="outline" size="xs" onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}>สุดท้าย</Button>
           </div>
         </div>
       )}
