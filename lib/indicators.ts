@@ -300,6 +300,104 @@ export function ichimoku(klines: KlineData[], tenkanP = 9, kijunP = 26, senkouBP
   return { tenkan, kijun, senkouA, senkouB, chikou };
 }
 
+// ─── CDC ActionZone V3 2020 ──────────────────────────────────────
+// Based on piriya33's PineScript indicator — EMA crossover zones
+export type CDCZone = "green" | "blue" | "lightblue" | "red" | "orange" | "yellow" | null;
+
+export interface CDCActionZoneResult {
+  fastMA: (number | null)[];
+  slowMA: (number | null)[];
+  zone: CDCZone[];
+  bull: (boolean | null)[];    // FastMA > SlowMA
+  signal: ("BUY" | "SELL" | null)[];  // first green / first red
+  trend: ("bullish" | "bearish" | null)[];
+}
+
+export function cdcActionZone(
+  data: number[],
+  fastPeriod = 12,
+  slowPeriod = 26,
+  smoothPeriod = 1,
+): CDCActionZoneResult {
+  // xPrice = EMA(close, smooth) — smooth=1 means just close
+  const xPrice = smoothPeriod <= 1 ? data : ema(data, smoothPeriod).map((v, i) => v ?? data[i]);
+
+  const fastMA = ema(xPrice as number[], fastPeriod);
+  const slowMA = ema(xPrice as number[], slowPeriod);
+
+  const len = data.length;
+  const zone: CDCZone[] = [];
+  const bullArr: (boolean | null)[] = [];
+  const signalArr: ("BUY" | "SELL" | null)[] = [];
+  const trendArr: ("bullish" | "bearish" | null)[] = [];
+
+  // Track last buy/sell for trend determination
+  let lastBuyBar = -Infinity;
+  let lastSellBar = -Infinity;
+
+  for (let i = 0; i < len; i++) {
+    const f = fastMA[i];
+    const s = slowMA[i];
+    const p = xPrice[i];
+
+    if (f === null || s === null || p === undefined) {
+      zone.push(null);
+      bullArr.push(null);
+      signalArr.push(null);
+      trendArr.push(null);
+      continue;
+    }
+
+    const isBull = f > s;
+    const isBear = f < s;
+    bullArr.push(isBull);
+
+    // Define zones
+    let z: CDCZone;
+    if (isBull && p > f) z = "green";          // Buy zone
+    else if (isBear && p > f && p > s) z = "blue";    // Pre Buy 2
+    else if (isBear && p > f && p < s) z = "lightblue"; // Pre Buy 1
+    else if (isBear && p < f) z = "red";              // Sell zone
+    else if (isBull && p < f && p < s) z = "orange";  // Pre Sell 2
+    else if (isBull && p < f && p > s) z = "yellow";  // Pre Sell 1
+    else z = null; // edge case (equal)
+    zone.push(z);
+
+    // Buy/Sell signals: first green after non-green, first red after non-red
+    const prevZone = i > 0 ? zone[i - 1] : null;
+    const isGreen = z === "green";
+    const wasGreen = prevZone === "green";
+    const isRed = z === "red";
+    const wasRed = prevZone === "red";
+
+    const buyCond = isGreen && !wasGreen;
+    const sellCond = isRed && !wasRed;
+
+    // Use prevTrend BEFORE updating lastBuyBar/lastSellBar (matches Pine: bearish[1])
+    const prevTrend = trendArr[i - 1] ?? null;
+
+    // Actual buy = bearish[1] and buyCond, sell = bullish[1] and sellCond
+    // Pine Script requires strict bearish/bullish — no null fallback
+    if (buyCond && prevTrend === "bearish") {
+      signalArr.push("BUY");
+    } else if (sellCond && prevTrend === "bullish") {
+      signalArr.push("SELL");
+    } else {
+      signalArr.push(null);
+    }
+
+    // Update trend tracking AFTER signal check
+    if (buyCond) lastBuyBar = i;
+    if (sellCond) lastSellBar = i;
+
+    const isBullish = lastBuyBar > lastSellBar;
+    const isBearish = lastSellBar > lastBuyBar;
+    trendArr.push(isBullish ? "bullish" : isBearish ? "bearish" : null);
+  }
+
+  return { fastMA, slowMA, zone, bull: bullArr, signal: signalArr, trend: trendArr };
+}
+
 // ─── Compute all indicators for klines ─────────────────────────
 export interface AllIndicators {
   rsi: (number | null)[];
@@ -314,6 +412,7 @@ export interface AllIndicators {
   mfi: (number | null)[];
   vwap: number[];
   ichimoku: IchimokuResult;
+  cdcActionZone: CDCActionZoneResult;
 }
 
 export function computeAll(klines: KlineData[]): AllIndicators {
@@ -331,5 +430,6 @@ export function computeAll(klines: KlineData[]): AllIndicators {
     mfi: mfi(klines, 14),
     vwap: vwap(klines),
     ichimoku: ichimoku(klines),
+    cdcActionZone: cdcActionZone(c, 12, 26, 1),
   };
 }

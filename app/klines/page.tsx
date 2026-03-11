@@ -591,6 +591,40 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
     rows.push({ name: "Ichimoku", value: `T:${fmtPrice(ich.tenkan[last]!)} K:${fmtPrice(ich.kijun[last]!)}`, signal: sig, color: c > cloudTop ? "text-emerald-500" : "text-red-500" });
   }
 
+  // CDC ActionZone
+  const cdc = indicators.cdcActionZone;
+  const cdcZone = cdc.zone[last];
+  const cdcTrend = cdc.trend[last];
+  const cdcSignal = cdc.signal[last];
+  if (cdcZone !== null) {
+    const zoneLabels: Record<string, string> = {
+      green: "Green (Buy Zone)",
+      blue: "Blue (Pre Buy 2)",
+      lightblue: "Light Blue (Pre Buy 1)",
+      red: "Red (Sell Zone)",
+      orange: "Orange (Pre Sell 2)",
+      yellow: "Yellow (Pre Sell 1)",
+    };
+    const zoneColors: Record<string, string> = {
+      green: "text-emerald-500",
+      blue: "text-blue-500",
+      lightblue: "text-cyan-400",
+      red: "text-red-500",
+      orange: "text-orange-500",
+      yellow: "text-yellow-500",
+    };
+    const zoneLabel = zoneLabels[cdcZone] ?? cdcZone;
+    const zoneColor = zoneColors[cdcZone] ?? "text-muted-foreground";
+    const trendLabel = cdcTrend ? `${cdcTrend.charAt(0).toUpperCase() + cdcTrend.slice(1)}` : "N/A";
+    const sigLabel = cdcSignal ? cdcSignal : trendLabel;
+    rows.push({
+      name: "CDC ActionZone",
+      value: `Fast:${cdc.fastMA[last] !== null ? fmtPrice(cdc.fastMA[last]!) : "-"} Slow:${cdc.slowMA[last] !== null ? fmtPrice(cdc.slowMA[last]!) : "-"}`,
+      signal: `${zoneLabel} | ${sigLabel}`,
+      color: zoneColor,
+    });
+  }
+
   return (
     <Card size="sm">
       <CardHeader className="border-b"><CardTitle>Live Indicator Values</CardTitle></CardHeader>

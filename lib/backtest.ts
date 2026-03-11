@@ -45,7 +45,8 @@ export type StrategyId =
   | "adx_di"
   | "ichimoku"
   | "mfi"
-  | "combined";
+  | "combined"
+  | "cdc_actionzone";
 
 export interface StrategyConfig {
   id: StrategyId;
@@ -102,6 +103,12 @@ export const STRATEGIES: StrategyConfig[] = [
     name: "Combined (RSI + MACD + EMA)",
     description: "Buy when 2/3 agree BUY, Sell when 2/3 agree SELL",
     params: {},
+  },
+  {
+    id: "cdc_actionzone",
+    name: "CDC ActionZone V3",
+    description: "EMA crossover zones — Buy on first Green bar, Sell on first Red bar",
+    params: { fastPeriod: 12, slowPeriod: 26 },
   },
 ];
 
@@ -228,6 +235,15 @@ function combinedStrategy(klines: KlineData[], ind: AllIndicators, params: Recor
   });
 }
 
+function cdcActionZoneStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  const cdc = ind.cdcActionZone;
+  return cdc.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
   macd: macdStrategy,
@@ -237,6 +253,7 @@ const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   ichimoku: ichimokuStrategy,
   mfi: mfiStrategy,
   combined: combinedStrategy,
+  cdc_actionzone: cdcActionZoneStrategy,
 };
 
 // ─── Backtest Engine ───────────────────────────────────────────
