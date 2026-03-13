@@ -60,7 +60,7 @@ export const STRATEGIES: StrategyConfig[] = [
     id: "rsi",
     name: "RSI Overbought/Oversold",
     description: "Buy RSI < 30, Sell RSI > 70",
-    params: { buyThreshold: 30, sellThreshold: 70 },
+    params: { period: 14, buyThreshold: 30, sellThreshold: 70 },
   },
   {
     id: "macd",
@@ -263,7 +263,9 @@ export function runBacktest(
   params: Record<string, number> = {},
   feesPct = 0.1, // 0.1% per trade (Binance default)
 ): BacktestResult {
-  const indicators = computeAll(klines);
+  const indicators = computeAll(klines, {
+    rsiPeriod: strategyId === "rsi" ? (params.period ?? 14) : undefined,
+  });
   const signals = STRATEGY_FNS[strategyId](klines, indicators, params);
 
   const closes = klines.map(k => +k.close);

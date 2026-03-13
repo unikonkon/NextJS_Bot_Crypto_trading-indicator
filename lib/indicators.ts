@@ -415,10 +415,10 @@ export interface AllIndicators {
   cdcActionZone: CDCActionZoneResult;
 }
 
-export function computeAll(klines: KlineData[]): AllIndicators {
+export function computeAll(klines: KlineData[], overrides?: { rsiPeriod?: number }): AllIndicators {
   const c = closes(klines);
   return {
-    rsi: rsi(c, 14),
+    rsi: rsi(c, overrides?.rsiPeriod ?? 14),
     macd: macd(c, 12, 26, 9),
     ema50: ema(c, 50),
     ema200: ema(c, 200),

@@ -40,6 +40,15 @@ const INTERVAL_GROUPS: Record<string, Interval[]> = {
   "วัน+": ["1d", "3d", "1w", "1M"],
 };
 
+const PARAM_LABELS: Record<string, string> = {
+  period: "RSI Period",
+  buyThreshold: "ซื้อเมื่อ RSI <",
+  sellThreshold: "ขายเมื่อ RSI >",
+  adxThreshold: "ADX Threshold",
+  fastPeriod: "Fast EMA",
+  slowPeriod: "Slow EMA",
+};
+
 // ─── Formatting ────────────────────────────────────────────────
 function fmtNum(val: string | number, dec = 2): string {
   const n = typeof val === "string" ? parseFloat(val) : val;
@@ -146,6 +155,9 @@ export default function KlinesPage() {
 
   // Backtest state
   const [strategyId, setStrategyId] = useState<StrategyId>("rsi");
+  const [strategyParams, setStrategyParams] = useState<Record<string, number>>(
+    () => ({ ...STRATEGIES.find(s => s.id === "rsi")!.params })
+  );
   const [feesPct, setFeesPct] = useState("0.1");
   const [btResult, setBtResult] = useState<BacktestResult | null>(null);
   const [btRunning, setBtRunning] = useState(false);
@@ -223,12 +235,12 @@ export default function KlinesPage() {
     setError(null);
     setTimeout(() => {
       try {
-        const result = runBacktest(klines, strategyId, {}, parseFloat(feesPct) || 0.1);
+        const result = runBacktest(klines, strategyId, strategyParams, parseFloat(feesPct) || 0.1);
         setBtResult(result);
       } catch (err) { setError(String(err)); }
       finally { setBtRunning(false); }
     }, 10);
-  }, [klines, strategyId, feesPct]);
+  }, [klines, strategyId, strategyParams, feesPct]);
 
   // Summary stats
   const summary = useMemo(() => {
@@ -400,24 +412,82 @@ export default function KlinesPage() {
               <CardDescription>รันกลยุทธ์ทดสอบบนข้อมูล {klines.length.toLocaleString()} แท่งเทียนที่โหลดไว้</CardDescription>
             </CardHeader>
             <CardContent className="pt-2">
-              <div className="flex flex-wrap items-center gap-3">
-                <Field label="กลยุทธ์ Indicator">
-                  <Select value={strategyId} onValueChange={(v) => { if (v) setStrategyId(v as StrategyId); }}>
-                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="ค่าธรรมเนียม (%)">
-                  <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
-                </Field>
-                <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
-                  {btRunning ? "กำลังรัน..." : "รัน Backtest"}
-                </Button>
-                <p className="text-[10px] text-muted-foreground self-center">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Field label="กลยุทธ์ Indicator">
+                    <Select value={strategyId} onValueChange={(v) => {
+                      if (v) {
+                        const sid = v as StrategyId;
+                        setStrategyId(sid);
+                        const strat = STRATEGIES.find(s => s.id === sid);
+                        setStrategyParams(strat ? { ...strat.params } : {});
+                      }
+                    }}>
+                      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="ค่าธรรมเนียม (%)">
+                    <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
+                  </Field>
+                  <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
+                    {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                  </Button>
+                </div>
+
+                {/* Strategy description */}
+                <p className="text-[10px] text-muted-foreground">
                   {STRATEGIES.find(s => s.id === strategyId)?.description}
                 </p>
+
+                {/* RSI explanation */}
+                {strategyId === "rsi" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">RSI (Relative Strength Index) คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      RSI เป็นตัวชี้วัดโมเมนตัม (Momentum Oscillator) ที่วัดความเร็วและขนาดของการเปลี่ยนแปลงราคา
+                      โดยคำนวณจากอัตราส่วนของ <span className="text-emerald-500/80">ค่าเฉลี่ยของราคาที่เพิ่มขึ้น (Average Gain)</span> กับ <span className="text-red-500/80">ค่าเฉลี่ยของราคาที่ลดลง (Average Loss)</span> ในช่วง Period ที่กำหนด
+                      ค่า RSI อยู่ในช่วง 0-100
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">RSI &lt; {strategyParams.buyThreshold ?? 30} = Oversold (ขายมากเกินไป) → สัญญาณซื้อ</span>
+                      <span className="text-red-500">RSI &gt; {strategyParams.sellThreshold ?? 70} = Overbought (ซื้อมากเกินไป) → สัญญาณขาย</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      สูตร: RSI = 100 - 100 / (1 + AG/AL) โดย AG = ค่าเฉลี่ยกำไร, AL = ค่าเฉลี่ยขาดทุน ในช่วง Period แท่ง
+                    </p>
+                  </div>
+                )}
+
+                {/* Strategy-specific parameter inputs */}
+                {Object.keys(strategyParams).length > 0 && (
+                  <div className="flex flex-wrap items-end gap-3">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground w-full">ปรับค่าพารามิเตอร์</p>
+                    {Object.entries(strategyParams).map(([key, val]) => (
+                      <Field key={key} label={PARAM_LABELS[key] ?? key}>
+                        <div className="space-y-0.5">
+                          <Input
+                            type="number"
+                            step={key === "period" ? 1 : 1}
+                            min={1}
+                            value={val}
+                            onChange={e => setStrategyParams(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                            className="w-24"
+                          />
+                          {strategyId === "rsi" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "period" && "จำนวนแท่งเทียนที่ใช้คำนวณ (ค่าทั่วไป: 7, 14, 21)"}
+                              {key === "buyThreshold" && "ค่า RSI ต่ำกว่านี้ = สัญญาณซื้อ"}
+                              {key === "sellThreshold" && "ค่า RSI สูงกว่านี้ = สัญญาณขาย"}
+                            </p>
+                          )}
+                        </div>
+                      </Field>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
