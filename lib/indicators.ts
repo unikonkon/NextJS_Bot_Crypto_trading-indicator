@@ -938,6 +938,116 @@ export function smartMoneyConcepts(
   };
 }
 
+// ─── Supertrend ──────────────────────────────────────────────────
+// Based on PineScript v4 Supertrend indicator — trend-following
+// overlay using ATR bands that flip on trend change.
+
+export interface SupertrendResult {
+  supertrend: (number | null)[];  // supertrend line value
+  trend: (1 | -1 | null)[];      // 1 = uptrend, -1 = downtrend
+  upperBand: (number | null)[];   // upper ATR band (dn line)
+  lowerBand: (number | null)[];   // lower ATR band (up line)
+  signal: ("BUY" | "SELL" | null)[];
+}
+
+export function supertrend(
+  klines: KlineData[],
+  atrPeriod = 10,
+  multiplier = 3.0,
+): SupertrendResult {
+  const h = highs(klines);
+  const l = lows(klines);
+  const c = closes(klines);
+  const len = klines.length;
+
+  // ATR calculation (true ATR with EMA-style smoothing)
+  const tr: number[] = [];
+  for (let i = 0; i < len; i++) {
+    if (i === 0) { tr.push(h[i] - l[i]); continue; }
+    tr.push(Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])));
+  }
+
+  const atrArr: (number | null)[] = [];
+  let atrPrev: number | null = null;
+  for (let i = 0; i < len; i++) {
+    if (i < atrPeriod - 1) { atrArr.push(null); continue; }
+    if (atrPrev === null) {
+      let sum = 0;
+      for (let j = i - atrPeriod + 1; j <= i; j++) sum += tr[j];
+      atrPrev = sum / atrPeriod;
+    } else {
+      atrPrev = (atrPrev * (atrPeriod - 1) + tr[i]) / atrPeriod;
+    }
+    atrArr.push(atrPrev);
+  }
+
+  // Supertrend calculation
+  // src = hl2 = (high + low) / 2
+  // up = src - (Multiplier * atr)    → lower band (support in uptrend)
+  // dn = src + (Multiplier * atr)    → upper band (resistance in downtrend)
+  const supertrendArr: (number | null)[] = new Array(len).fill(null);
+  const trendArr: (1 | -1 | null)[] = new Array(len).fill(null);
+  const upperBand: (number | null)[] = new Array(len).fill(null);
+  const lowerBand: (number | null)[] = new Array(len).fill(null);
+  const signalArr: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
+
+  let prevUp = 0;
+  let prevDn = Infinity;
+  let prevTrend: 1 | -1 = 1;
+
+  for (let i = 0; i < len; i++) {
+    const a = atrArr[i];
+    if (a === null) continue;
+
+    const src = (h[i] + l[i]) / 2;
+    let up = src - multiplier * a;
+    let dn = src + multiplier * a;
+
+    // Adjust bands: up can only go up, dn can only go down (like PineScript)
+    // up := close[1] > up1 ? max(up, up1) : up
+    if (i > 0 && c[i - 1] > prevUp) {
+      up = Math.max(up, prevUp);
+    }
+    // dn := close[1] < dn1 ? min(dn, dn1) : dn
+    if (i > 0 && c[i - 1] < prevDn) {
+      dn = Math.min(dn, prevDn);
+    }
+
+    // Trend determination
+    // trend := trend == -1 and close > dn1 ? 1 : trend == 1 and close < up1 ? -1 : trend
+    let trend: 1 | -1 = prevTrend;
+    if (prevTrend === -1 && c[i] > prevDn) {
+      trend = 1;
+    } else if (prevTrend === 1 && c[i] < prevUp) {
+      trend = -1;
+    }
+
+    lowerBand[i] = up;
+    upperBand[i] = dn;
+    trendArr[i] = trend;
+    supertrendArr[i] = trend === 1 ? up : dn;
+
+    // Buy/Sell signals: trend change
+    if (trend === 1 && prevTrend === -1) {
+      signalArr[i] = "BUY";
+    } else if (trend === -1 && prevTrend === 1) {
+      signalArr[i] = "SELL";
+    }
+
+    prevUp = up;
+    prevDn = dn;
+    prevTrend = trend;
+  }
+
+  return {
+    supertrend: supertrendArr,
+    trend: trendArr,
+    upperBand,
+    lowerBand,
+    signal: signalArr,
+  };
+}
+
 // ─── Compute all indicators for klines ─────────────────────────
 export interface AllIndicators {
   rsi: (number | null)[];
@@ -955,6 +1065,7 @@ export interface AllIndicators {
   cdcActionZone: CDCActionZoneResult;
   smc: SMCResult;
   cmMacd: CMMAcDResult;
+  supertrend: SupertrendResult;
 }
 
 export function computeAll(klines: KlineData[], overrides?: {
@@ -964,6 +1075,8 @@ export function computeAll(klines: KlineData[], overrides?: {
   cmMacdFast?: number;
   cmMacdSlow?: number;
   cmMacdSignal?: number;
+  supertrendPeriod?: number;
+  supertrendMultiplier?: number;
 }): AllIndicators {
   const c = closes(klines);
   return {
@@ -982,5 +1095,6 @@ export function computeAll(klines: KlineData[], overrides?: {
     cdcActionZone: cdcActionZone(c, 12, 26, 1),
     smc: smartMoneyConcepts(klines, overrides?.smcSwingSize ?? 50, overrides?.smcInternalSize ?? 5),
     cmMacd: cmMacdUltMTF(c, overrides?.cmMacdFast ?? 12, overrides?.cmMacdSlow ?? 26, overrides?.cmMacdSignal ?? 9),
+    supertrend: supertrend(klines, overrides?.supertrendPeriod ?? 10, overrides?.supertrendMultiplier ?? 3.0),
   };
 }

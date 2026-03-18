@@ -48,7 +48,8 @@ export type StrategyId =
   | "combined"
   | "cdc_actionzone"
   | "smc"
-  | "cm_macd";
+  | "cm_macd"
+  | "supertrend";
 
 export interface StrategyConfig {
   id: StrategyId;
@@ -123,6 +124,12 @@ export const STRATEGIES: StrategyConfig[] = [
     name: "CM MacD Ultimate MTF",
     description: "Enhanced MACD 4-Color — Buy เมื่อ MACD ตัดขึ้น Signal, Sell เมื่อ MACD ตัดลง Signal",
     params: { fastLength: 12, slowLength: 26, signalLength: 9 },
+  },
+  {
+    id: "supertrend",
+    name: "Supertrend",
+    description: "ATR-based trend follower — Buy เมื่อเทรนด์เปลี่ยนเป็นขาขึ้น, Sell เมื่อเปลี่ยนเป็นขาลง",
+    params: { atrPeriod: 10, multiplier: 3.0 },
   },
 ];
 
@@ -274,6 +281,14 @@ function cmMacdStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
   });
 }
 
+function supertrendStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.supertrend.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
   macd: macdStrategy,
@@ -286,6 +301,7 @@ const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   cdc_actionzone: cdcActionZoneStrategy,
   smc: smcStrategy,
   cm_macd: cmMacdStrategy,
+  supertrend: supertrendStrategy,
 };
 
 // ─── Backtest Engine ───────────────────────────────────────────
@@ -302,6 +318,8 @@ export function runBacktest(
     cmMacdFast: strategyId === "cm_macd" ? (params.fastLength ?? 12) : undefined,
     cmMacdSlow: strategyId === "cm_macd" ? (params.slowLength ?? 26) : undefined,
     cmMacdSignal: strategyId === "cm_macd" ? (params.signalLength ?? 9) : undefined,
+    supertrendPeriod: strategyId === "supertrend" ? (params.atrPeriod ?? 10) : undefined,
+    supertrendMultiplier: strategyId === "supertrend" ? (params.multiplier ?? 3.0) : undefined,
   });
   const signals = STRATEGY_FNS[strategyId](klines, indicators, params);
 

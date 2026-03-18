@@ -50,6 +50,7 @@ export const INDICATOR_REQUIREMENTS: Record<string, { minBars: number; fields: s
   "CDC ActionZone": { minBars: 27, fields: ["Close"] },
   "SMC": { minBars: 100, fields: ["Open", "High", "Low", "Close"] },
   "CM MacD Ult MTF": { minBars: 35, fields: ["Close"] },
+  "Supertrend": { minBars: 15, fields: ["High", "Low", "Close"] },
 };
 
 export function parseKline(raw: BinanceKlineRaw): KlineData {

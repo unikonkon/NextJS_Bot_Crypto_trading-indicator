@@ -52,6 +52,8 @@ const PARAM_LABELS: Record<string, string> = {
   fastLength: "Fast EMA",
   slowLength: "Slow EMA",
   signalLength: "Signal SMA",
+  atrPeriod: "ATR Period",
+  multiplier: "ATR Multiplier",
 };
 
 // ─── Formatting ────────────────────────────────────────────────
@@ -665,6 +667,79 @@ export default function KlinesPage() {
                   </div>
                 )}
 
+                {/* Supertrend explanation */}
+                {strategyId === "supertrend" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Supertrend คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Supertrend เป็นตัวชี้วัดแบบ <span className="font-medium text-foreground/80">Trend-Following (ติดตามเทรนด์)</span> ที่ใช้ ATR (Average True Range)
+                      สร้างแถบราคาบน-ล่างรอบๆ ราคา เมื่อราคาทะลุแถบจะเกิดสัญญาณเปลี่ยนเทรนด์
+                      เหมาะสำหรับตลาดที่มีเทรนด์ชัดเจน (Trending Market)
+                    </p>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">หลักการทำงาน:</p>
+                      <div className="space-y-0.5 text-muted-foreground">
+                        <p>1. คำนวณ ATR เพื่อวัดความผันผวนของราคา</p>
+                        <p>2. สร้าง <span className="text-emerald-500">Lower Band</span> = HL2 - (Multiplier × ATR) → แนวรับในขาขึ้น</p>
+                        <p>3. สร้าง <span className="text-red-500">Upper Band</span> = HL2 + (Multiplier × ATR) → แนวต้านในขาลง</p>
+                        <p>4. เมื่อราคาปิดทะลุ Band → เทรนด์เปลี่ยน → สัญญาณ BUY/SELL</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → เทรนด์เปลี่ยนจากขาลงเป็นขาขึ้น (ราคาทะลุ Upper Band)</span>
+                        <span className="text-red-500">SELL → เทรนด์เปลี่ยนจากขาขึ้นเป็นขาลง (ราคาหลุด Lower Band)</span>
+                      </div>
+                    </div>
+
+                    <Separator className="my-1.5" />
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">ความหมายของพารามิเตอร์:</p>
+                      <div className="space-y-2">
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-blue-400">ATR Period (ค่าปัจจุบัน: {strategyParams.atrPeriod ?? 10})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            จำนวนแท่งเทียนที่ใช้คำนวณ ATR (Average True Range) — วัดความผันผวนเฉลี่ยของราคา
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (5-7) → ATR ไวต่อความผันผวนระยะสั้น → Band แคบขึ้น → สัญญาณเปลี่ยนเทรนด์เร็ว แต่ Whipsaw (สัญญาณหลอก) มากขึ้น</p>
+                            <p className="text-red-500/80">ค่ามาก (14-20) → ATR เรียบขึ้น → Band กว้างขึ้น → ทนต่อ noise ดี แต่เข้า/ออกช้า</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 10 (มาตรฐาน), 7 (ไว), 14 (ช้าแต่แม่นยำ)</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-purple-400">ATR Multiplier (ค่าปัจจุบัน: {strategyParams.multiplier ?? 3.0})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            ตัวคูณ ATR เพื่อกำหนดระยะห่างของ Band จากราคา — ยิ่งมาก Band ยิ่งห่างจากราคา
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (1.0-2.0) → Band แคบ ใกล้ราคา → เปลี่ยนเทรนด์บ่อย สัญญาณเยอะ → เหมาะ Scalping แต่ Whipsaw มาก</p>
+                            <p className="text-red-500/80">ค่ามาก (4.0-6.0) → Band กว้าง ห่างราคา → เปลี่ยนเทรนด์ยาก สัญญาณน้อย → จับเทรนด์ใหญ่ แต่ Drawdown อาจมาก</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 3.0 (มาตรฐาน), 2.0 (ไว), 4.0 (ช้า)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2 text-[9px] text-amber-500/80">
+                      <p className="font-medium">ผลกระทบเมื่อเปลี่ยนค่า:</p>
+                      <p>ATR Period: มีผลต่อความเรียบของ ATR — ค่าน้อย ATR แกว่งเร็ว Band ปรับตัวเร็ว, ค่ามาก ATR เสถียร Band เปลี่ยนช้า</p>
+                      <p>Multiplier: มีผลโดยตรงต่อความกว้างของ Band — ค่ามาก = ต้องราคาเคลื่อนที่มากกว่าจึงจะเปลี่ยนเทรนด์ ลด false signals แต่เข้า/ออกช้าลง</p>
+                      <p>ทั้งสองค่าร่วมกัน: Period น้อย + Multiplier น้อย = ไวมาก (เหมาะ Scalp) | Period มาก + Multiplier มาก = ช้ามาก (เหมาะ Swing/Position)</p>
+                    </div>
+
+                    <div className="rounded border border-blue-500/20 bg-blue-500/5 p-2 text-[9px] text-blue-500/80">
+                      <p className="font-medium">ข้อควรระวัง:</p>
+                      <p>Supertrend ทำงานได้ดีในตลาดที่มีเทรนด์ (Trending Market) แต่จะให้สัญญาณหลอกมากในตลาด Sideways (ราคาเคลื่อนไปข้าง)</p>
+                      <p>แนะนำใช้ร่วมกับ ADX เพื่อกรอง — ถ้า ADX &gt; 25 แสดงว่ามีเทรนด์ชัดเจน Supertrend จะน่าเชื่อถือมากขึ้น</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Strategy-specific parameter inputs */}
                 {Object.keys(strategyParams).length > 0 && (
                   <div className="flex flex-wrap items-end gap-3">
@@ -698,6 +773,12 @@ export default function KlinesPage() {
                               {key === "fastLength" && "EMA สั้น (6-21) — ค่าน้อย=ไว ค่ามาก=ช้าแต่แม่นยำ"}
                               {key === "slowLength" && "EMA ยาว (15-50) — ห่างจาก Fast มาก=Histogram แกว่งแรง"}
                               {key === "signalLength" && "SMA กรองสัญญาณ (3-20) — ค่าน้อย=cross บ่อย ค่ามาก=กรอง noise"}
+                            </p>
+                          )}
+                          {strategyId === "supertrend" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "atrPeriod" && "แท่งเทียนคำนวณ ATR (5-20) — ค่าน้อย=Band ไว ค่ามาก=Band เสถียร"}
+                              {key === "multiplier" && "ตัวคูณ ATR (1.0-6.0) — ค่าน้อย=Band แคบ สัญญาณเยอะ ค่ามาก=Band กว้าง จับเทรนด์ใหญ่"}
                             </p>
                           )}
                         </div>
@@ -961,6 +1042,33 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
         color: hc.color,
       });
     }
+  }
+
+  // Supertrend
+  const st = indicators.supertrend;
+  const stTrend = st.trend[last];
+  const stValue = st.supertrend[last];
+  const stSignal = st.signal[last];
+
+  if (stTrend !== null && stValue !== null) {
+    const isUp = stTrend === 1;
+    rows.push({
+      name: "Supertrend",
+      value: fmtPrice(stValue),
+      signal: `${isUp ? "Uptrend (ขาขึ้น)" : "Downtrend (ขาลง)"}${stSignal ? ` | ${stSignal}` : ""}`,
+      color: isUp ? "text-emerald-500" : "text-red-500",
+    });
+
+    // Show distance from price to supertrend
+    const distance = ((c - stValue) / stValue) * 100;
+    rows.push({
+      name: "ST Distance",
+      value: `${distance >= 0 ? "+" : ""}${distance.toFixed(2)}%`,
+      signal: isUp
+        ? `ราคาอยู่เหนือ Supertrend ${Math.abs(distance).toFixed(2)}%`
+        : `ราคาอยู่ใต้ Supertrend ${Math.abs(distance).toFixed(2)}%`,
+      color: distance >= 0 ? "text-emerald-500" : "text-red-500",
+    });
   }
 
   return (
