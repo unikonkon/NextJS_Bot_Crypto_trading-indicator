@@ -501,6 +501,81 @@ export default function KlinesPage() {
                   </div>
                 )}
 
+                {/* SMC explanation */}
+                {strategyId === "smc" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Smart Money Concepts (SMC) คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      SMC เป็นแนวคิดการวิเคราะห์โครงสร้างตลาด (Market Structure) ตามทฤษฎี ICT/Smart Money
+                      โดยตรวจจับจุดกลับตัวของราคา (Pivot Points) แล้ววิเคราะห์ว่าราคาทะลุจุดสำคัญอย่างไร
+                    </p>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">โครงสร้างตลาด (Market Structure):</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BOS (Break of Structure) = ราคาทะลุ pivot ตามเทรนด์เดิม → ยืนยันเทรนด์</span>
+                        <span className="text-amber-500">CHoCH (Change of Character) = ราคาทะลุ pivot สวนเทรนด์ → สัญญาณกลับตัว</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">องค์ประกอบอื่น:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                        <span>Order Block (OB) = แท่งเทียนสุดท้ายก่อนราคาพุ่ง/ดิ่ง → โซนแนวรับ/ต้านที่แข็งแกร่ง</span>
+                        <span>Fair Value Gap (FVG) = ช่องว่างราคาระหว่าง 3 แท่งเทียน → ราคามักย้อนกลับมาเติมช่องว่าง</span>
+                        <span>Premium Zone = ราคาอยู่สูงกว่าจุดสมดุล → เหมาะขาย | Discount Zone = ราคาอยู่ต่ำกว่า → เหมาะซื้อ</span>
+                      </div>
+                    </div>
+
+                    <Separator className="my-1.5" />
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">ความหมายของพารามิเตอร์:</p>
+                      <div className="space-y-2">
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-blue-400">Swing Size (ค่าปัจจุบัน: {strategyParams.swingSize ?? 50})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            จำนวนแท่งเทียนที่ใช้หา Swing Point (จุดกลับตัวหลัก) — เป็นจำนวนแท่งซ้าย-ขวาที่ต้องต่ำ/สูงกว่าจุด pivot
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (10-20) → เจอ swing points บ่อย → สัญญาณเยอะ → ไวต่อการเปลี่ยนแปลง แต่อาจเจอสัญญาณหลอก (false signals) มากขึ้น</p>
+                            <p className="text-red-500/80">ค่ามาก (50-100) → เจอ swing points น้อย → สัญญาณน้อย → จับเทรนด์ใหญ่ได้ดี แต่ช้าในการเข้า/ออก</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 20-50 สำหรับ Day Trading, 50-100 สำหรับ Swing Trading</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-purple-400">Internal Size (ค่าปัจจุบัน: {strategyParams.internalSize ?? 5})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            จำนวนแท่งเทียนที่ใช้หา Internal Structure (โครงสร้างย่อยภายในเทรนด์) — ใช้สร้างสัญญาณ BUY/SELL
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (2-3) → จับการเคลื่อนไหวเล็กๆ → เทรดบ่อย → เหมาะ Scalping แต่ค่าธรรมเนียมสูง</p>
+                            <p className="text-red-500/80">ค่ามาก (7-15) → กรอง noise ออก → เทรดน้อยลง → สัญญาณมีคุณภาพมากขึ้น แต่อาจพลาดจังหวะ</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 3-5 สำหรับ Intraday, 5-10 สำหรับ Swing</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator className="my-1.5" />
+
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ Backtest:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → Bullish CHoCH (กลับตัวขึ้น) หรือ Bullish BOS ใน Discount/Equilibrium Zone</span>
+                        <span className="text-red-500">SELL → Bearish CHoCH (กลับตัวลง) หรือ Bearish BOS ใน Premium/Equilibrium Zone</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2 text-[9px] text-amber-500/80">
+                      <p className="font-medium">ผลกระทบเมื่อเปลี่ยนค่า:</p>
+                      <p>Swing Size มีผลต่อ Premium/Discount Zone (โซนราคา) และ Swing Trend — ค่ามากจะทำให้โซนกว้างขึ้น เทรนด์เปลี่ยนช้าลง</p>
+                      <p>Internal Size มีผลโดยตรงต่อจำนวนสัญญาณ BUY/SELL — ค่าน้อย = สัญญาณเยอะ, ค่ามาก = สัญญาณน้อยแต่แม่นยำกว่า</p>
+                      <p>ทั้งสองค่ามีผลต่อ Order Blocks และ Fair Value Gaps ที่ตรวจพบ</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Strategy-specific parameter inputs */}
                 {Object.keys(strategyParams).length > 0 && (
                   <div className="flex flex-wrap items-end gap-3">
@@ -521,6 +596,12 @@ export default function KlinesPage() {
                               {key === "period" && "จำนวนแท่งเทียนที่ใช้คำนวณ (ค่าทั่วไป: 7, 14, 21)"}
                               {key === "buyThreshold" && "ค่า RSI ต่ำกว่านี้ = สัญญาณซื้อ"}
                               {key === "sellThreshold" && "ค่า RSI สูงกว่านี้ = สัญญาณขาย"}
+                            </p>
+                          )}
+                          {strategyId === "smc" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "swingSize" && "แท่งเทียนหา pivot หลัก (10-100) — ค่าน้อย=ไว ค่ามาก=จับเทรนด์ใหญ่"}
+                              {key === "internalSize" && "แท่งเทียนหาโครงสร้างย่อย (2-15) — ค่าน้อย=สัญญาณเยอะ ค่ามาก=กรอง noise"}
                             </p>
                           )}
                         </div>

@@ -281,6 +281,8 @@ export function runBacktest(
 ): BacktestResult {
   const indicators = computeAll(klines, {
     rsiPeriod: strategyId === "rsi" ? (params.period ?? 14) : undefined,
+    smcSwingSize: strategyId === "smc" ? (params.swingSize ?? 50) : undefined,
+    smcInternalSize: strategyId === "smc" ? (params.internalSize ?? 5) : undefined,
   });
   const signals = STRATEGY_FNS[strategyId](klines, indicators, params);
 

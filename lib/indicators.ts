@@ -844,7 +844,11 @@ export interface AllIndicators {
   smc: SMCResult;
 }
 
-export function computeAll(klines: KlineData[], overrides?: { rsiPeriod?: number }): AllIndicators {
+export function computeAll(klines: KlineData[], overrides?: {
+  rsiPeriod?: number;
+  smcSwingSize?: number;
+  smcInternalSize?: number;
+}): AllIndicators {
   const c = closes(klines);
   return {
     rsi: rsi(c, overrides?.rsiPeriod ?? 14),
@@ -860,6 +864,6 @@ export function computeAll(klines: KlineData[], overrides?: { rsiPeriod?: number
     vwap: vwap(klines),
     ichimoku: ichimoku(klines),
     cdcActionZone: cdcActionZone(c, 12, 26, 1),
-    smc: smartMoneyConcepts(klines, 50, 5),
+    smc: smartMoneyConcepts(klines, overrides?.smcSwingSize ?? 50, overrides?.smcInternalSize ?? 5),
   };
 }
