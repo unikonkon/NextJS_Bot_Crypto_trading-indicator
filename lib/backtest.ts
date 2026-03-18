@@ -47,7 +47,8 @@ export type StrategyId =
   | "mfi"
   | "combined"
   | "cdc_actionzone"
-  | "smc";
+  | "smc"
+  | "cm_macd";
 
 export interface StrategyConfig {
   id: StrategyId;
@@ -116,6 +117,12 @@ export const STRATEGIES: StrategyConfig[] = [
     name: "Smart Money Concepts (SMC)",
     description: "Buy on Bullish CHoCH/BOS (discount zone), Sell on Bearish CHoCH/BOS (premium zone)",
     params: { swingSize: 50, internalSize: 5 },
+  },
+  {
+    id: "cm_macd",
+    name: "CM MacD Ultimate MTF",
+    description: "Enhanced MACD 4-Color — Buy เมื่อ MACD ตัดขึ้น Signal, Sell เมื่อ MACD ตัดลง Signal",
+    params: { fastLength: 12, slowLength: 26, signalLength: 9 },
   },
 ];
 
@@ -259,6 +266,14 @@ function smcStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
   });
 }
 
+function cmMacdStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.cmMacd.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
   macd: macdStrategy,
@@ -270,6 +285,7 @@ const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   combined: combinedStrategy,
   cdc_actionzone: cdcActionZoneStrategy,
   smc: smcStrategy,
+  cm_macd: cmMacdStrategy,
 };
 
 // ─── Backtest Engine ───────────────────────────────────────────
@@ -283,6 +299,9 @@ export function runBacktest(
     rsiPeriod: strategyId === "rsi" ? (params.period ?? 14) : undefined,
     smcSwingSize: strategyId === "smc" ? (params.swingSize ?? 50) : undefined,
     smcInternalSize: strategyId === "smc" ? (params.internalSize ?? 5) : undefined,
+    cmMacdFast: strategyId === "cm_macd" ? (params.fastLength ?? 12) : undefined,
+    cmMacdSlow: strategyId === "cm_macd" ? (params.slowLength ?? 26) : undefined,
+    cmMacdSignal: strategyId === "cm_macd" ? (params.signalLength ?? 9) : undefined,
   });
   const signals = STRATEGY_FNS[strategyId](klines, indicators, params);
 

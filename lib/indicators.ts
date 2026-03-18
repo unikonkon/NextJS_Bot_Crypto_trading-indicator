@@ -398,6 +398,118 @@ export function cdcActionZone(
   return { fastMA, slowMA, zone, bull: bullArr, signal: signalArr, trend: trendArr };
 }
 
+// ─── CM MacD Ultimate MTF ────────────────────────────────────────
+// Based on ChrisMoody's PineScript — Enhanced MACD with 4-color histogram
+// showing momentum direction above/below zero line.
+
+export type CMHistColor = "aqua" | "blue" | "red" | "maroon";
+
+export interface CMMAcDResult {
+  macdLine: (number | null)[];
+  signalLine: (number | null)[];
+  histogram: (number | null)[];
+  histColor: (CMHistColor | null)[];     // 4-color histogram
+  macdAboveSignal: (boolean | null)[];   // MACD >= Signal
+  crossUp: boolean[];                    // MACD crosses above Signal
+  crossDown: boolean[];                  // MACD crosses below Signal
+  signal: ("BUY" | "SELL" | null)[];     // trading signals
+}
+
+export function cmMacdUltMTF(
+  data: number[],
+  fastLength = 12,
+  slowLength = 26,
+  signalLength = 9,
+): CMMAcDResult {
+  const len = data.length;
+  const fastMA = ema(data, fastLength);
+  const slowMA = ema(data, slowLength);
+
+  const macdLine: (number | null)[] = [];
+  for (let i = 0; i < len; i++) {
+    if (fastMA[i] !== null && slowMA[i] !== null) {
+      macdLine.push(fastMA[i]! - slowMA[i]!);
+    } else {
+      macdLine.push(null);
+    }
+  }
+
+  // Signal line = SMA of MACD (like in the PineScript: sma(macd, signalLength))
+  const nonNullMacd = macdLine.filter(v => v !== null) as number[];
+  const sigSMA = sma(nonNullMacd, signalLength);
+
+  const signalLine: (number | null)[] = [];
+  const histogram: (number | null)[] = [];
+  let idx = 0;
+  for (let i = 0; i < len; i++) {
+    if (macdLine[i] === null) {
+      signalLine.push(null);
+      histogram.push(null);
+    } else {
+      const s = sigSMA[idx] ?? null;
+      signalLine.push(s);
+      histogram.push(s !== null ? macdLine[i]! - s : null);
+      idx++;
+    }
+  }
+
+  // 4-color histogram logic
+  // histA_IsUp   = hist > hist[1] and hist > 0   → aqua  (เพิ่มขึ้น เหนือศูนย์)
+  // histA_IsDown = hist < hist[1] and hist > 0   → blue  (ลดลง แต่ยังเหนือศูนย์)
+  // histB_IsDown = hist < hist[1] and hist <= 0  → red   (ลดลง ใต้ศูนย์)
+  // histB_IsUp   = hist > hist[1] and hist <= 0  → maroon (เพิ่มขึ้น แต่ยังใต้ศูนย์)
+  const histColor: (CMHistColor | null)[] = [];
+  const macdAboveSignal: (boolean | null)[] = [];
+  const crossUp: boolean[] = [];
+  const crossDown: boolean[] = [];
+  const signal: ("BUY" | "SELL" | null)[] = [];
+
+  for (let i = 0; i < len; i++) {
+    const h = histogram[i];
+    const hPrev = i > 0 ? histogram[i - 1] : null;
+    const m = macdLine[i];
+    const s = signalLine[i];
+
+    if (h === null || hPrev === null) {
+      histColor.push(null);
+      macdAboveSignal.push(null);
+      crossUp.push(false);
+      crossDown.push(false);
+      signal.push(null);
+      continue;
+    }
+
+    // 4-color
+    if (h > hPrev && h > 0) histColor.push("aqua");
+    else if (h < hPrev && h > 0) histColor.push("blue");
+    else if (h < hPrev && h <= 0) histColor.push("red");
+    else if (h > hPrev && h <= 0) histColor.push("maroon");
+    else histColor.push("blue"); // equal case
+
+    // MACD vs Signal
+    const isAbove = m !== null && s !== null ? m >= s : null;
+    macdAboveSignal.push(isAbove);
+
+    // Cross detection
+    const prevM = i > 0 ? macdLine[i - 1] : null;
+    const prevS = i > 0 ? signalLine[i - 1] : null;
+    const prevAbove = prevM !== null && prevS !== null ? prevM >= prevS : null;
+    const currAbove = m !== null && s !== null ? m >= s : null;
+
+    const isCrossUp = prevAbove === false && currAbove === true;
+    const isCrossDown = prevAbove === true && currAbove === false;
+    crossUp.push(isCrossUp);
+    crossDown.push(isCrossDown);
+
+    // Trading signals
+    if (isCrossUp) signal.push("BUY");
+    else if (isCrossDown) signal.push("SELL");
+    else signal.push(null);
+  }
+
+  return { macdLine, signalLine, histogram, histColor, macdAboveSignal, crossUp, crossDown, signal };
+}
+
 // ─── Smart Money Concepts (SMC) ─────────────────────────────────
 // Converted from LuxAlgo PineScript — detects market structure,
 // order blocks, fair value gaps, and premium/discount zones.
@@ -842,12 +954,16 @@ export interface AllIndicators {
   ichimoku: IchimokuResult;
   cdcActionZone: CDCActionZoneResult;
   smc: SMCResult;
+  cmMacd: CMMAcDResult;
 }
 
 export function computeAll(klines: KlineData[], overrides?: {
   rsiPeriod?: number;
   smcSwingSize?: number;
   smcInternalSize?: number;
+  cmMacdFast?: number;
+  cmMacdSlow?: number;
+  cmMacdSignal?: number;
 }): AllIndicators {
   const c = closes(klines);
   return {
@@ -865,5 +981,6 @@ export function computeAll(klines: KlineData[], overrides?: {
     ichimoku: ichimoku(klines),
     cdcActionZone: cdcActionZone(c, 12, 26, 1),
     smc: smartMoneyConcepts(klines, overrides?.smcSwingSize ?? 50, overrides?.smcInternalSize ?? 5),
+    cmMacd: cmMacdUltMTF(c, overrides?.cmMacdFast ?? 12, overrides?.cmMacdSlow ?? 26, overrides?.cmMacdSignal ?? 9),
   };
 }

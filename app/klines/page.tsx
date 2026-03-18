@@ -49,6 +49,9 @@ const PARAM_LABELS: Record<string, string> = {
   slowPeriod: "Slow EMA",
   swingSize: "Swing Size",
   internalSize: "Internal Size",
+  fastLength: "Fast EMA",
+  slowLength: "Slow EMA",
+  signalLength: "Signal SMA",
 };
 
 // ─── Formatting ────────────────────────────────────────────────
@@ -576,6 +579,92 @@ export default function KlinesPage() {
                   </div>
                 )}
 
+                {/* CM MacD Ultimate MTF explanation */}
+                {strategyId === "cm_macd" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">CM MacD Ultimate MTF คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      CM MacD Ultimate MTF เป็น MACD เวอร์ชันปรับปรุงโดย ChrisMoody
+                      ที่เพิ่ม <span className="font-medium text-foreground/80">Histogram 4 สี</span> แสดงทิศทางและความแรงของโมเมนตัม
+                      ทั้งเหนือและใต้เส้นศูนย์ ช่วยให้เห็นการเปลี่ยนแปลงโมเมนตัมก่อนเกิดสัญญาณ crossover
+                    </p>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">Histogram 4 สี:</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        <span className="text-cyan-400">Aqua = เพิ่มขึ้น &amp; เหนือ 0 → แรงซื้อเพิ่มขึ้น (Bullish แรง)</span>
+                        <span className="text-blue-500">Blue = ลดลง &amp; เหนือ 0 → แรงซื้ออ่อนตัว (Bullish อ่อน)</span>
+                        <span className="text-red-500">Red = ลดลง &amp; ใต้ 0 → แรงขายเพิ่มขึ้น (Bearish แรง)</span>
+                        <span className="text-red-800">Maroon = เพิ่มขึ้น &amp; ใต้ 0 → แรงขายอ่อนตัว (Bearish อ่อน)</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → MACD ตัดขึ้นเหนือ Signal Line (Golden Cross)</span>
+                        <span className="text-red-500">SELL → MACD ตัดลงใต้ Signal Line (Death Cross)</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">การอ่านสีล่วงหน้า:</p>
+                      <p className="text-muted-foreground">
+                        เมื่อ Histogram เปลี่ยนจาก <span className="text-cyan-400">Aqua</span> → <span className="text-blue-500">Blue</span> = แรงซื้ออ่อนลง เตรียมตัวขาย |
+                        เปลี่ยนจาก <span className="text-red-500">Red</span> → <span className="text-red-800">Maroon</span> = แรงขายอ่อนลง เตรียมตัวซื้อ
+                      </p>
+                    </div>
+
+                    <Separator className="my-1.5" />
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">ความหมายของพารามิเตอร์:</p>
+                      <div className="space-y-2">
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-blue-400">Fast EMA (ค่าปัจจุบัน: {strategyParams.fastLength ?? 12})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            EMA ระยะสั้น — ตอบสนองต่อราคาเร็วกว่า ใช้คำนวณ MACD Line (Fast EMA - Slow EMA)
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (6-9) → ไวต่อการเปลี่ยนแปลงราคา → สัญญาณเร็วขึ้น แต่ false signals มากขึ้น</p>
+                            <p className="text-red-500/80">ค่ามาก (15-21) → ช้าลง → สัญญาณน้อยแต่แม่นยำกว่า อาจเข้าช้า/ออกช้า</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 12 (มาตรฐาน), 8 (ไว), 17 (ช้า)</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-purple-400">Slow EMA (ค่าปัจจุบัน: {strategyParams.slowLength ?? 26})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            EMA ระยะยาว — เป็นเส้นฐานที่ราคาเฉลี่ยช้ากว่า ใช้คู่กับ Fast EMA
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (15-20) → ระยะห่างระหว่าง Fast/Slow น้อย → Histogram เล็ก สัญญาณบ่อย</p>
+                            <p className="text-red-500/80">ค่ามาก (30-50) → ระยะห่างมาก → Histogram ใหญ่ สัญญาณน้อย จับเทรนด์ใหญ่</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 26 (มาตรฐาน), 21 (ไว), 35 (ช้า)</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-amber-400">Signal SMA (ค่าปัจจุบัน: {strategyParams.signalLength ?? 9})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            SMA ของ MACD Line — เป็นตัวกรองสัญญาณ เมื่อ MACD ตัด Signal = สัญญาณเทรด
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (3-5) → Signal Line ไวมาก → cross บ่อย สัญญาณเยอะ แต่มี noise มาก</p>
+                            <p className="text-red-500/80">ค่ามาก (12-20) → Signal Line เรียบ → cross น้อย สัญญาณมีคุณภาพ แต่ช้า</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 9 (มาตรฐาน), 5 (ไว), 14 (ช้า)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2 text-[9px] text-amber-500/80">
+                      <p className="font-medium">ผลกระทบเมื่อเปลี่ยนค่า:</p>
+                      <p>Fast EMA &amp; Slow EMA: ผลต่างของทั้งคู่กำหนดขนาด MACD Line — ถ้าห่างกันมาก = MACD แกว่งแรง, ห่างน้อย = MACD แกว่งเบา</p>
+                      <p>Signal Length: มีผลโดยตรงต่อจำนวน crossover (สัญญาณ BUY/SELL) — ค่าน้อย = cross บ่อย, ค่ามาก = cross น้อย</p>
+                      <p>Histogram 4 สีจะเปลี่ยนตามโดยอัตโนมัติ — ช่วยอ่านโมเมนตัมก่อนเกิดสัญญาณจริง</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Strategy-specific parameter inputs */}
                 {Object.keys(strategyParams).length > 0 && (
                   <div className="flex flex-wrap items-end gap-3">
@@ -602,6 +691,13 @@ export default function KlinesPage() {
                             <p className="text-[9px] text-muted-foreground/70">
                               {key === "swingSize" && "แท่งเทียนหา pivot หลัก (10-100) — ค่าน้อย=ไว ค่ามาก=จับเทรนด์ใหญ่"}
                               {key === "internalSize" && "แท่งเทียนหาโครงสร้างย่อย (2-15) — ค่าน้อย=สัญญาณเยอะ ค่ามาก=กรอง noise"}
+                            </p>
+                          )}
+                          {strategyId === "cm_macd" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "fastLength" && "EMA สั้น (6-21) — ค่าน้อย=ไว ค่ามาก=ช้าแต่แม่นยำ"}
+                              {key === "slowLength" && "EMA ยาว (15-50) — ห่างจาก Fast มาก=Histogram แกว่งแรง"}
+                              {key === "signalLength" && "SMA กรองสัญญาณ (3-20) — ค่าน้อย=cross บ่อย ค่ามาก=กรอง noise"}
                             </p>
                           )}
                         </div>
@@ -831,6 +927,41 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
     signal: `OB: ${activeOBs} | FVG: ${activeFVGs}`,
     color: "text-muted-foreground",
   });
+
+  // CM MacD Ultimate MTF
+  const cm = indicators.cmMacd;
+  const cmMacd = cm.macdLine[last];
+  const cmSignal = cm.signalLine[last];
+  const cmHist = cm.histogram[last];
+  const cmColor = cm.histColor[last];
+  const cmAbove = cm.macdAboveSignal[last];
+  const cmSig = cm.signal[last];
+
+  if (cmMacd !== null && cmSignal !== null) {
+    const histColorLabels: Record<string, { label: string; color: string }> = {
+      aqua: { label: "เพิ่มขึ้น เหนือ 0 (แรงซื้อเพิ่ม)", color: "text-cyan-400" },
+      blue: { label: "ลดลง เหนือ 0 (แรงซื้ออ่อน)", color: "text-blue-500" },
+      red: { label: "ลดลง ใต้ 0 (แรงขายเพิ่ม)", color: "text-red-500" },
+      maroon: { label: "เพิ่มขึ้น ใต้ 0 (แรงขายอ่อน)", color: "text-red-800" },
+    };
+    const hc = cmColor ? histColorLabels[cmColor] : null;
+
+    rows.push({
+      name: "CM MacD",
+      value: `M:${cmMacd.toFixed(2)} S:${cmSignal.toFixed(2)}`,
+      signal: cmAbove ? "MACD เหนือ Signal (ขาขึ้น)" : "MACD ใต้ Signal (ขาลง)",
+      color: cmAbove ? "text-emerald-500" : "text-red-500",
+    });
+
+    if (cmHist !== null && hc) {
+      rows.push({
+        name: "CM Histogram",
+        value: cmHist.toFixed(4),
+        signal: `${hc.label}${cmSig ? ` | สัญญาณ: ${cmSig}` : ""}`,
+        color: hc.color,
+      });
+    }
+  }
 
   return (
     <Card size="sm">
