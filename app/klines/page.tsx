@@ -47,6 +47,8 @@ const PARAM_LABELS: Record<string, string> = {
   adxThreshold: "ADX Threshold",
   fastPeriod: "Fast EMA",
   slowPeriod: "Slow EMA",
+  swingSize: "Swing Size",
+  internalSize: "Internal Size",
 };
 
 // ─── Formatting ────────────────────────────────────────────────
@@ -442,9 +444,6 @@ export default function KlinesPage() {
         {/* Summary */}
         {summary && <SummaryCards summary={summary} />}
 
-        {/* Indicator Values */}
-        {indicators && <IndicatorPanel indicators={indicators} klines={klines} />}
-
         {/* ═══ BACKTEST ═══ */}
         {klines.length > 0 && (
           <Card size="sm">
@@ -536,6 +535,9 @@ export default function KlinesPage() {
 
         {/* Backtest Results */}
         {btResult && <BacktestResults result={btResult} />}
+
+        {/* Indicator Values */}
+        {indicators && <IndicatorPanel indicators={indicators} klines={klines} />}
 
         {/* Kline Table */}
         <KlineTable klines={klines} loading={loading} signals={btResult?.signals} />
@@ -693,6 +695,62 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
     });
   }
 
+  // Smart Money Concepts (SMC)
+  const smc = indicators.smc;
+  const smcSwingTrend = smc.swingTrend[last];
+  const smcInternalTrend = smc.internalTrend[last];
+  const smcZone = smc.premiumDiscount[last];
+  const lastSmcSignal = smc.signal[last];
+
+  // Find most recent structure break
+  const recentStructure = smc.internalStructures.length > 0
+    ? smc.internalStructures[smc.internalStructures.length - 1]
+    : null;
+
+  // Count active (unmitigated) OBs
+  const activeOBs = smc.internalOrderBlocks.filter(ob => !ob.mitigated).length;
+  const activeFVGs = smc.fairValueGaps.filter(fvg => !fvg.filled).length;
+
+  if (smcSwingTrend !== null) {
+    rows.push({
+      name: "SMC Swing Trend",
+      value: smcSwingTrend === "bullish" ? "Bullish" : "Bearish",
+      signal: smcSwingTrend === "bullish" ? "ขาขึ้น" : "ขาลง",
+      color: smcSwingTrend === "bullish" ? "text-emerald-500" : "text-red-500",
+    });
+  }
+
+  if (smcInternalTrend !== null) {
+    rows.push({
+      name: "SMC Internal Trend",
+      value: smcInternalTrend === "bullish" ? "Bullish" : "Bearish",
+      signal: recentStructure ? `${recentStructure.type} ${recentStructure.bias}` : "N/A",
+      color: smcInternalTrend === "bullish" ? "text-emerald-500" : "text-red-500",
+    });
+  }
+
+  if (smcZone !== null) {
+    const zoneMap: Record<string, { label: string; color: string }> = {
+      premium: { label: "Premium Zone (แพง)", color: "text-red-500" },
+      discount: { label: "Discount Zone (ถูก)", color: "text-emerald-500" },
+      equilibrium: { label: "Equilibrium (สมดุล)", color: "text-yellow-500" },
+    };
+    const z = zoneMap[smcZone] ?? { label: smcZone, color: "text-muted-foreground" };
+    rows.push({
+      name: "SMC Zone",
+      value: z.label,
+      signal: lastSmcSignal ?? "HOLD",
+      color: z.color,
+    });
+  }
+
+  rows.push({
+    name: "SMC Order Blocks",
+    value: `Active: ${activeOBs}`,
+    signal: `OB: ${activeOBs} | FVG: ${activeFVGs}`,
+    color: "text-muted-foreground",
+  });
+
   return (
     <Card size="sm">
       <CardHeader className="border-b"><CardTitle>ค่าตัวชี้วัด</CardTitle></CardHeader>
@@ -784,11 +842,10 @@ function BacktestResults({ result }: { result: BacktestResult }) {
             {result.trades.map((t, i) => (
               <span
                 key={i}
-                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${
-                  t.pnlPct >= 0
+                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${t.pnlPct >= 0
                     ? "bg-emerald-500/10 text-emerald-500"
                     : "bg-red-500/10 text-red-500"
-                }`}
+                  }`}
               >
                 #{i + 1} {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%
               </span>

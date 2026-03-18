@@ -48,6 +48,7 @@ export const INDICATOR_REQUIREMENTS: Record<string, { minBars: number; fields: s
   "VWAP": { minBars: 1, fields: ["High", "Low", "Close", "Volume", "QuoteVol"] },
   "SMA(50)": { minBars: 50, fields: ["Close"] },
   "CDC ActionZone": { minBars: 27, fields: ["Close"] },
+  "SMC": { minBars: 100, fields: ["Open", "High", "Low", "Close"] },
 };
 
 export function parseKline(raw: BinanceKlineRaw): KlineData {

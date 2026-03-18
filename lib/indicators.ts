@@ -398,6 +398,434 @@ export function cdcActionZone(
   return { fastMA, slowMA, zone, bull: bullArr, signal: signalArr, trend: trendArr };
 }
 
+// ─── Smart Money Concepts (SMC) ─────────────────────────────────
+// Converted from LuxAlgo PineScript — detects market structure,
+// order blocks, fair value gaps, and premium/discount zones.
+
+export type SMCStructureType = "BOS" | "CHoCH";
+export type SMCBias = "bullish" | "bearish";
+
+export interface SMCStructureBreak {
+  index: number;        // bar where break happened
+  type: SMCStructureType;
+  bias: SMCBias;
+  level: number;        // price level that was broken
+  pivotIndex: number;   // bar index of the pivot that was broken
+}
+
+export interface SMCOrderBlock {
+  startIndex: number;
+  high: number;
+  low: number;
+  bias: SMCBias;
+  mitigated: boolean;
+  mitigatedIndex: number | null;
+}
+
+export interface SMCFairValueGap {
+  index: number;        // middle candle index
+  top: number;
+  bottom: number;
+  bias: SMCBias;
+  filled: boolean;
+  filledIndex: number | null;
+}
+
+export interface SMCSwingPoint {
+  index: number;
+  price: number;
+  type: "HH" | "HL" | "LH" | "LL" | "H" | "L";
+}
+
+export interface SMCResult {
+  swingTrend: (SMCBias | null)[];
+  internalTrend: (SMCBias | null)[];
+  swingStructures: SMCStructureBreak[];
+  internalStructures: SMCStructureBreak[];
+  swingOrderBlocks: SMCOrderBlock[];
+  internalOrderBlocks: SMCOrderBlock[];
+  fairValueGaps: SMCFairValueGap[];
+  swingPoints: SMCSwingPoint[];
+  premiumDiscount: ("premium" | "discount" | "equilibrium" | null)[];
+  signal: ("BUY" | "SELL" | null)[];
+}
+
+/**
+ * Detect swing legs — a pivot high occurs when high[size] > highest(size bars after)
+ * and pivot low when low[size] < lowest(size bars after).
+ */
+function detectPivots(
+  h: number[], l: number[], size: number
+): { pivotHighs: (number | null)[]; pivotLows: (number | null)[] } {
+  const len = h.length;
+  const pivotHighs: (number | null)[] = new Array(len).fill(null);
+  const pivotLows: (number | null)[] = new Array(len).fill(null);
+
+  for (let i = size; i < len - size; i++) {
+    let isHigh = true;
+    let isLow = true;
+    for (let j = 1; j <= size; j++) {
+      if (h[i] <= h[i - j] || h[i] <= h[i + j]) isHigh = false;
+      if (l[i] >= l[i - j] || l[i] >= l[i + j]) isLow = false;
+    }
+    if (isHigh) pivotHighs[i] = h[i];
+    if (isLow) pivotLows[i] = l[i];
+  }
+  return { pivotHighs, pivotLows };
+}
+
+/**
+ * Detect market structure (BOS/CHoCH) from pivot points.
+ * - BOS: price breaks above a pivot high in an uptrend (or below pivot low in downtrend)
+ * - CHoCH: price breaks above a pivot high in a downtrend (trend reversal) or vice versa
+ */
+function detectStructure(
+  c: number[], _h: number[], _l: number[],
+  pivotHighs: (number | null)[], pivotLows: (number | null)[],
+): { structures: SMCStructureBreak[]; trend: (SMCBias | null)[] } {
+  const len = c.length;
+  const structures: SMCStructureBreak[] = [];
+  const trend: (SMCBias | null)[] = new Array(len).fill(null);
+
+  let currentTrend: SMCBias | null = null;
+  let lastPivotHigh: { price: number; index: number; crossed: boolean } | null = null;
+  let lastPivotLow: { price: number; index: number; crossed: boolean } | null = null;
+
+  for (let i = 0; i < len; i++) {
+    // Update pivots
+    if (pivotHighs[i] !== null) {
+      lastPivotHigh = { price: pivotHighs[i]!, index: i, crossed: false };
+    }
+    if (pivotLows[i] !== null) {
+      lastPivotLow = { price: pivotLows[i]!, index: i, crossed: false };
+    }
+
+    // Check bullish break (close crosses above pivot high)
+    if (lastPivotHigh && !lastPivotHigh.crossed && c[i] > lastPivotHigh.price) {
+      const type: SMCStructureType = currentTrend === "bearish" ? "CHoCH" : "BOS";
+      structures.push({
+        index: i,
+        type,
+        bias: "bullish",
+        level: lastPivotHigh.price,
+        pivotIndex: lastPivotHigh.index,
+      });
+      lastPivotHigh.crossed = true;
+      currentTrend = "bullish";
+    }
+
+    // Check bearish break (close crosses below pivot low)
+    if (lastPivotLow && !lastPivotLow.crossed && c[i] < lastPivotLow.price) {
+      const type: SMCStructureType = currentTrend === "bullish" ? "CHoCH" : "BOS";
+      structures.push({
+        index: i,
+        type,
+        bias: "bearish",
+        level: lastPivotLow.price,
+        pivotIndex: lastPivotLow.index,
+      });
+      lastPivotLow.crossed = true;
+      currentTrend = "bearish";
+    }
+
+    trend[i] = currentTrend;
+  }
+
+  return { structures, trend };
+}
+
+/**
+ * Detect Order Blocks — the last opposite candle before a structure break.
+ * Bullish OB: last bearish candle before a bullish break
+ * Bearish OB: last bullish candle before a bearish break
+ */
+function detectOrderBlocks(
+  c: number[], o: number[], h: number[], l: number[],
+  structures: SMCStructureBreak[],
+): SMCOrderBlock[] {
+  const orderBlocks: SMCOrderBlock[] = [];
+  const len = c.length;
+
+  for (const s of structures) {
+    // Search backward from the pivot for the last opposite candle
+    const searchEnd = s.pivotIndex;
+    const searchStart = Math.max(0, searchEnd - 20);
+
+    if (s.bias === "bullish") {
+      // Find last bearish candle before the bullish break
+      for (let j = searchEnd; j >= searchStart; j--) {
+        if (c[j] < o[j]) {
+          orderBlocks.push({
+            startIndex: j,
+            high: h[j],
+            low: l[j],
+            bias: "bullish",
+            mitigated: false,
+            mitigatedIndex: null,
+          });
+          break;
+        }
+      }
+    } else {
+      // Find last bullish candle before the bearish break
+      for (let j = searchEnd; j >= searchStart; j--) {
+        if (c[j] > o[j]) {
+          orderBlocks.push({
+            startIndex: j,
+            high: h[j],
+            low: l[j],
+            bias: "bearish",
+            mitigated: false,
+            mitigatedIndex: null,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // Check mitigation (price returns into the OB)
+  for (const ob of orderBlocks) {
+    for (let i = ob.startIndex + 1; i < len; i++) {
+      if (ob.bias === "bullish" && l[i] <= ob.low) {
+        ob.mitigated = true;
+        ob.mitigatedIndex = i;
+        break;
+      }
+      if (ob.bias === "bearish" && h[i] >= ob.high) {
+        ob.mitigated = true;
+        ob.mitigatedIndex = i;
+        break;
+      }
+    }
+  }
+
+  return orderBlocks;
+}
+
+/**
+ * Detect Fair Value Gaps — a 3-candle pattern where there's a gap
+ * between candle 1 and candle 3 (candle 2 doesn't fill the gap).
+ */
+function detectFairValueGaps(
+  h: number[], l: number[], _c: number[], _o: number[],
+  atrValues: (number | null)[],
+): SMCFairValueGap[] {
+  const fvgs: SMCFairValueGap[] = [];
+  const len = h.length;
+
+  for (let i = 2; i < len; i++) {
+    const atrVal = atrValues[i];
+    // Bullish FVG: candle3 low > candle1 high (gap up)
+    if (l[i] > h[i - 2]) {
+      const gapSize = l[i] - h[i - 2];
+      // Filter by ATR threshold (gap must be meaningful)
+      if (atrVal === null || gapSize > atrVal * 0.1) {
+        const fvg: SMCFairValueGap = {
+          index: i - 1,
+          top: l[i],
+          bottom: h[i - 2],
+          bias: "bullish",
+          filled: false,
+          filledIndex: null,
+        };
+        // Check if FVG is filled later
+        for (let j = i + 1; j < len; j++) {
+          if (l[j] <= fvg.bottom) {
+            fvg.filled = true;
+            fvg.filledIndex = j;
+            break;
+          }
+        }
+        fvgs.push(fvg);
+      }
+    }
+
+    // Bearish FVG: candle3 high < candle1 low (gap down)
+    if (h[i] < l[i - 2]) {
+      const gapSize = l[i - 2] - h[i];
+      if (atrVal === null || gapSize > atrVal * 0.1) {
+        const fvg: SMCFairValueGap = {
+          index: i - 1,
+          top: l[i - 2],
+          bottom: h[i],
+          bias: "bearish",
+          filled: false,
+          filledIndex: null,
+        };
+        for (let j = i + 1; j < len; j++) {
+          if (h[j] >= fvg.top) {
+            fvg.filled = true;
+            fvg.filledIndex = j;
+            break;
+          }
+        }
+        fvgs.push(fvg);
+      }
+    }
+  }
+
+  return fvgs;
+}
+
+/**
+ * Detect swing point labels (HH, HL, LH, LL)
+ */
+function detectSwingPoints(
+  pivotHighs: (number | null)[], pivotLows: (number | null)[],
+): SMCSwingPoint[] {
+  const points: SMCSwingPoint[] = [];
+  let lastHigh: number | null = null;
+  let lastLow: number | null = null;
+
+  for (let i = 0; i < pivotHighs.length; i++) {
+    if (pivotHighs[i] !== null) {
+      const price = pivotHighs[i]!;
+      let type: SMCSwingPoint["type"];
+      if (lastHigh === null) type = "H";
+      else type = price > lastHigh ? "HH" : "LH";
+      points.push({ index: i, price, type });
+      lastHigh = price;
+    }
+    if (pivotLows[i] !== null) {
+      const price = pivotLows[i]!;
+      let type: SMCSwingPoint["type"];
+      if (lastLow === null) type = "L";
+      else type = price > lastLow ? "HL" : "LL";
+      points.push({ index: i, price, type });
+      lastLow = price;
+    }
+  }
+
+  return points;
+}
+
+/**
+ * Determine premium/discount zones based on trailing swing high/low
+ */
+function detectPremiumDiscount(
+  c: number[], h: number[], l: number[],
+  pivotHighs: (number | null)[], pivotLows: (number | null)[],
+): ("premium" | "discount" | "equilibrium" | null)[] {
+  const len = c.length;
+  const result: ("premium" | "discount" | "equilibrium" | null)[] = new Array(len).fill(null);
+
+  let trailingHigh = -Infinity;
+  let trailingLow = Infinity;
+
+  for (let i = 0; i < len; i++) {
+    if (pivotHighs[i] !== null) trailingHigh = pivotHighs[i]!;
+    if (pivotLows[i] !== null) trailingLow = pivotLows[i]!;
+
+    // Also update with price action
+    if (h[i] > trailingHigh) trailingHigh = h[i];
+    if (l[i] < trailingLow) trailingLow = l[i];
+
+    if (trailingHigh === -Infinity || trailingLow === Infinity) continue;
+
+    const range = trailingHigh - trailingLow;
+    if (range <= 0) continue;
+
+    const equilibrium = (trailingHigh + trailingLow) / 2;
+    const premiumThreshold = equilibrium + range * 0.25;
+    const discountThreshold = equilibrium - range * 0.25;
+
+    if (c[i] >= premiumThreshold) result[i] = "premium";
+    else if (c[i] <= discountThreshold) result[i] = "discount";
+    else result[i] = "equilibrium";
+  }
+
+  return result;
+}
+
+/**
+ * Generate SMC trading signals
+ * BUY: Bullish CHoCH or BOS in discount zone, or bullish OB retest
+ * SELL: Bearish CHoCH or BOS in premium zone, or bearish OB retest
+ */
+function generateSMCSignals(
+  len: number,
+  structures: SMCStructureBreak[],
+  premiumDiscount: ("premium" | "discount" | "equilibrium" | null)[],
+  _trend: (SMCBias | null)[],
+): ("BUY" | "SELL" | null)[] {
+  const signals: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
+
+  // Structure-based signals
+  for (const s of structures) {
+    if (s.type === "CHoCH") {
+      // CHoCH is a stronger signal (trend reversal)
+      if (s.bias === "bullish") {
+        signals[s.index] = "BUY";
+      } else {
+        signals[s.index] = "SELL";
+      }
+    } else if (s.type === "BOS") {
+      // BOS in favorable zone
+      const zone = premiumDiscount[s.index];
+      if (s.bias === "bullish" && (zone === "discount" || zone === "equilibrium")) {
+        signals[s.index] = "BUY";
+      } else if (s.bias === "bearish" && (zone === "premium" || zone === "equilibrium")) {
+        signals[s.index] = "SELL";
+      }
+    }
+  }
+
+  return signals;
+}
+
+export function smartMoneyConcepts(
+  klines: KlineData[],
+  swingSize = 50,
+  internalSize = 5,
+): SMCResult {
+  const c = closes(klines);
+  const h = highs(klines);
+  const l = lows(klines);
+  const o = klines.map(x => +x.open);
+  const len = klines.length;
+
+  // ATR for filtering
+  const atrValues = atr(klines, 200);
+
+  // Detect pivots at both swing and internal levels
+  const swingPivots = detectPivots(h, l, swingSize);
+  const internalPivots = detectPivots(h, l, internalSize);
+
+  // Detect structure
+  const swingResult = detectStructure(c, h, l, swingPivots.pivotHighs, swingPivots.pivotLows);
+  const internalResult = detectStructure(c, h, l, internalPivots.pivotHighs, internalPivots.pivotLows);
+
+  // Order Blocks
+  const swingOBs = detectOrderBlocks(c, o, h, l, swingResult.structures);
+  const internalOBs = detectOrderBlocks(c, o, h, l, internalResult.structures);
+
+  // Fair Value Gaps
+  const fvgs = detectFairValueGaps(h, l, c, o, atrValues);
+
+  // Swing Points
+  const swingPoints = detectSwingPoints(swingPivots.pivotHighs, swingPivots.pivotLows);
+
+  // Premium/Discount
+  const premiumDiscount = detectPremiumDiscount(c, h, l, swingPivots.pivotHighs, swingPivots.pivotLows);
+
+  // Signals
+  const signal = generateSMCSignals(len, internalResult.structures, premiumDiscount, internalResult.trend);
+
+  return {
+    swingTrend: swingResult.trend,
+    internalTrend: internalResult.trend,
+    swingStructures: swingResult.structures,
+    internalStructures: internalResult.structures,
+    swingOrderBlocks: swingOBs,
+    internalOrderBlocks: internalOBs,
+    fairValueGaps: fvgs,
+    swingPoints,
+    premiumDiscount,
+    signal,
+  };
+}
+
 // ─── Compute all indicators for klines ─────────────────────────
 export interface AllIndicators {
   rsi: (number | null)[];
@@ -413,6 +841,7 @@ export interface AllIndicators {
   vwap: number[];
   ichimoku: IchimokuResult;
   cdcActionZone: CDCActionZoneResult;
+  smc: SMCResult;
 }
 
 export function computeAll(klines: KlineData[], overrides?: { rsiPeriod?: number }): AllIndicators {
@@ -431,5 +860,6 @@ export function computeAll(klines: KlineData[], overrides?: { rsiPeriod?: number
     vwap: vwap(klines),
     ichimoku: ichimoku(klines),
     cdcActionZone: cdcActionZone(c, 12, 26, 1),
+    smc: smartMoneyConcepts(klines, 50, 5),
   };
 }

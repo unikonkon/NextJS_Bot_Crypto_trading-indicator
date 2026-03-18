@@ -46,7 +46,8 @@ export type StrategyId =
   | "ichimoku"
   | "mfi"
   | "combined"
-  | "cdc_actionzone";
+  | "cdc_actionzone"
+  | "smc";
 
 export interface StrategyConfig {
   id: StrategyId;
@@ -109,6 +110,12 @@ export const STRATEGIES: StrategyConfig[] = [
     name: "CDC ActionZone V3",
     description: "EMA crossover zones — Buy on first Green bar, Sell on first Red bar",
     params: { fastPeriod: 12, slowPeriod: 26 },
+  },
+  {
+    id: "smc",
+    name: "Smart Money Concepts (SMC)",
+    description: "Buy on Bullish CHoCH/BOS (discount zone), Sell on Bearish CHoCH/BOS (premium zone)",
+    params: { swingSize: 50, internalSize: 5 },
   },
 ];
 
@@ -244,6 +251,14 @@ function cdcActionZoneStrategy(_k: KlineData[], ind: AllIndicators): SignalActio
   });
 }
 
+function smcStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.smc.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
   macd: macdStrategy,
@@ -254,6 +269,7 @@ const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   mfi: mfiStrategy,
   combined: combinedStrategy,
   cdc_actionzone: cdcActionZoneStrategy,
+  smc: smcStrategy,
 };
 
 // ─── Backtest Engine ───────────────────────────────────────────
