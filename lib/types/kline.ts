@@ -36,17 +36,9 @@ export type Interval = (typeof INTERVALS)[number];
 
 export const INDICATOR_REQUIREMENTS: Record<string, { minBars: number; fields: string[] }> = {
   "RSI(14)": { minBars: 15, fields: ["Close"] },
-  "MACD(12,26,9)": { minBars: 35, fields: ["Close"] },
-  "EMA(50)": { minBars: 50, fields: ["Close"] },
-  "EMA(200)": { minBars: 200, fields: ["Close"] },
-  "Bollinger Bands(20)": { minBars: 20, fields: ["Close"] },
-  "Ichimoku": { minBars: 52, fields: ["High", "Low", "Close"] },
-  "ADX(14)": { minBars: 28, fields: ["High", "Low", "Close"] },
   "ATR(14)": { minBars: 15, fields: ["High", "Low", "Close"] },
   "OBV": { minBars: 1, fields: ["Close", "Volume"] },
-  "MFI": { minBars: 14, fields: ["High", "Low", "Close", "Volume"] },
   "VWAP": { minBars: 1, fields: ["High", "Low", "Close", "Volume", "QuoteVol"] },
-  "SMA(50)": { minBars: 50, fields: ["Close"] },
   "CDC ActionZone": { minBars: 27, fields: ["Close"] },
   "SMC": { minBars: 100, fields: ["Open", "High", "Low", "Close"] },
   "CM MacD Ult MTF": { minBars: 35, fields: ["Close"] },

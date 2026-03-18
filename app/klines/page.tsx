@@ -5,7 +5,6 @@ import {
   type KlineData,
   type BinanceKlineRaw,
   type Interval,
-  INDICATOR_REQUIREMENTS,
   parseKline,
 } from "@/lib/types/kline";
 import { computeAll, type AllIndicators } from "@/lib/indicators";
@@ -44,7 +43,6 @@ const PARAM_LABELS: Record<string, string> = {
   period: "RSI Period",
   buyThreshold: "ซื้อเมื่อ RSI <",
   sellThreshold: "ขายเมื่อ RSI >",
-  adxThreshold: "ADX Threshold",
   fastPeriod: "Fast EMA",
   slowPeriod: "Slow EMA",
   swingSize: "Swing Size",
@@ -330,7 +328,7 @@ export default function KlinesPage() {
         <Separator />
 
         {/* ═══ CONFIG ═══ */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_350px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_650px]">
           <Card size="sm">
             <CardHeader>
               <CardTitle>ตั้งค่า</CardTitle>
@@ -367,87 +365,60 @@ export default function KlinesPage() {
                 </Field>
               </div>
 
-              <Separator />
-
-              {/* Two fetch modes side by side */}
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {/* Real-time fetch */}
-                <div className="space-y-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">เรียลไทม์</p>
-                  <div className="flex items-end gap-2">
-                    <Field label="จำนวน">
-                      <Select value={limit} onValueChange={(v) => { if (v) setLimit(v); }}>
-                        <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {["50", "100", "200", "500", "1000"].map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Button onClick={fetchRealtime} disabled={loading} className="h-9">
-                      {loading ? "กำลังดึง..." : "ดึงข้อมูลล่าสุด"}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Historical fetch */}
-                <div className="space-y-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ข้อมูลย้อนหลัง</p>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <Field label="เริ่มต้น">
-                      <Input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-44" />
-                    </Field>
-                    <Field label="สิ้นสุด">
-                      <Input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-44" />
-                    </Field>
-                    <Button onClick={fetchHistorical} disabled={loading} className="h-9">
-                      {loading ? "กำลังดึง..." : "ดึงข้อมูลย้อนหลัง"}
-                    </Button>
-                    {loading && (
-                      <Button variant="destructive" size="sm" onClick={() => abortRef.current?.abort()}>ยกเลิก</Button>
-                    )}
-                  </div>
-                  {backtestProgress && (
-                    <span className="text-[10px] text-muted-foreground animate-pulse">
-                      {backtestProgress.current.toLocaleString()} แท่งเทียน...
-                    </span>
-                  )}
-                </div>
-              </div>
             </CardContent>
           </Card>
 
-          {/* Indicator Status */}
+          {/* Fetch Data */}
           <Card size="sm">
-            <CardHeader><CardTitle>สถานะตัวชี้วัด</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-1">
-                {Object.entries(INDICATOR_REQUIREMENTS).map(([name, { minBars }]) => {
-                  const ok = klines.length >= minBars;
-                  return (
-                    <div key={name} className="flex items-center justify-between text-[11px]">
-                      <span className="text-muted-foreground">{name}</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="tabular-nums">{minBars}</span>
-                        {klines.length > 0 && <span className={`size-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-red-500"}`} />}
-                      </div>
-                    </div>
-                  );
-                })}
+            <CardHeader><CardTitle>ดึงข้อมูล</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              {/* Real-time fetch */}
+              <div className="space-y-2">
+                <div className="flex items-end gap-2">
+                  <Field label="ดึงข้อมูลเรียลไทม์ จำนวนแท่งเทียน">
+                    <Select value={limit} onValueChange={(v) => { if (v) setLimit(v); }}>
+                      <SelectTrigger className="w-42"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["50", "100", "200", "500", "1000"].map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Button onClick={fetchRealtime} disabled={loading} className="h-9">
+                    {loading ? "กำลังดึง..." : "ดึงข้อมูลล่าสุด"}
+                  </Button>
+                </div>
               </div>
-              {klines.length > 0 && (
-                <p className="mt-2 text-[10px] text-muted-foreground">
-                  {Object.values(INDICATOR_REQUIREMENTS).filter(({ minBars }) => klines.length >= minBars).length}/{Object.keys(INDICATOR_REQUIREMENTS).length} พร้อมใช้งาน
-                </p>
-              )}
+
+              <Separator />
+
+              {/* Historical fetch */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <Field label="ข้อมูลย้อนหลัง เริ่มต้น">
+                    <Input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-44 ml-1" />
+                  </Field>
+                  <Field label="สิ้นสุด">
+                    <Input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-44 ml-1" />
+                  </Field>
+                  <Button onClick={fetchHistorical} disabled={loading} className="h-9">
+                    {loading ? "กำลังดึง..." : "ดึงข้อมูลย้อนหลัง"}
+                  </Button>
+                  {loading && (
+                    <Button variant="destructive" size="sm" onClick={() => abortRef.current?.abort()}>ยกเลิก</Button>
+                  )}
+                </div>
+                {backtestProgress && (
+                  <span className="text-[10px] text-muted-foreground animate-pulse">
+                    {backtestProgress.current.toLocaleString()} แท่งเทียน...
+                  </span>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Error */}
         {error && <ErrorCard message={error} />}
-
-        {/* Summary */}
-        {summary && <SummaryCards summary={summary} />}
 
         {/* ═══ BACKTEST ═══ */}
         {klines.length > 0 && (
@@ -458,34 +429,90 @@ export default function KlinesPage() {
             </CardHeader>
             <CardContent className="pt-2">
               <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Field label="กลยุทธ์ Indicator">
-                    <Select value={strategyId} onValueChange={(v) => {
-                      if (v) {
-                        const sid = v as StrategyId;
-                        setStrategyId(sid);
-                        const strat = STRATEGIES.find(s => s.id === sid);
-                        setStrategyParams(strat ? { ...strat.params } : {});
-                      }
-                    }}>
-                      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="ค่าธรรมเนียม (%)">
-                    <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
-                  </Field>
-                  <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
-                    {btRunning ? "กำลังรัน..." : "รัน Backtest"}
-                  </Button>
+                <div className="flex justify-between">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Field label="กลยุทธ์ Indicator">
+                      <Select value={strategyId} onValueChange={(v) => {
+                        if (v) {
+                          const sid = v as StrategyId;
+                          setStrategyId(sid);
+                          const strat = STRATEGIES.find(s => s.id === sid);
+                          setStrategyParams(strat ? { ...strat.params } : {});
+                        }
+                      }}>
+                        <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="ค่าธรรมเนียม (%)">
+                      <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
+                    </Field>
+                    <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
+                      {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                    </Button>
+                  </div>
+                  {btResult && (
+                    <span className={`text-lg font-bold tabular-nums ${btResult.totalPnlPct >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      กำไรรวม: {btResult.totalPnlPct >= 0 ? "+" : ""}{btResult.totalPnlPct.toFixed(2)}%
+                    </span>
+                  )}
+                  {!btResult && (
+                    <span className="text-sm text-muted-foreground">กำไรรวม หลัง backtest : —</span>
+                  )}
                 </div>
-
                 {/* Strategy description */}
                 <p className="text-[10px] text-muted-foreground">
                   {STRATEGIES.find(s => s.id === strategyId)?.description}
                 </p>
+
+                {/* Strategy-specific parameter inputs */}
+                {Object.keys(strategyParams).length > 0 && (
+                  <div className="flex flex-wrap items-end gap-3">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground w-full">ปรับค่าพารามิเตอร์</p>
+                    {Object.entries(strategyParams).map(([key, val]) => (
+                      <Field key={key} label={PARAM_LABELS[key] ?? key}>
+                        <div className="space-y-0.5">
+                          <Input
+                            type="number"
+                            step={key === "period" ? 1 : 1}
+                            min={1}
+                            value={val}
+                            onChange={e => setStrategyParams(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                            className="w-24"
+                          />
+                          {strategyId === "rsi" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "period" && "จำนวนแท่งเทียนที่ใช้คำนวณ (ค่าทั่วไป: 7, 14, 21)"}
+                              {key === "buyThreshold" && "ค่า RSI ต่ำกว่านี้ = สัญญาณซื้อ"}
+                              {key === "sellThreshold" && "ค่า RSI สูงกว่านี้ = สัญญาณขาย"}
+                            </p>
+                          )}
+                          {strategyId === "smc" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "swingSize" && "แท่งเทียนหา pivot หลัก (10-100) — ค่าน้อย=ไว ค่ามาก=จับเทรนด์ใหญ่"}
+                              {key === "internalSize" && "แท่งเทียนหาโครงสร้างย่อย (2-15) — ค่าน้อย=สัญญาณเยอะ ค่ามาก=กรอง noise"}
+                            </p>
+                          )}
+                          {strategyId === "cm_macd" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "fastLength" && "EMA สั้น (6-21) — ค่าน้อย=ไว ค่ามาก=ช้าแต่แม่นยำ"}
+                              {key === "slowLength" && "EMA ยาว (15-50) — ห่างจาก Fast มาก=Histogram แกว่งแรง"}
+                              {key === "signalLength" && "SMA กรองสัญญาณ (3-20) — ค่าน้อย=cross บ่อย ค่ามาก=กรอง noise"}
+                            </p>
+                          )}
+                          {strategyId === "supertrend" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "atrPeriod" && "แท่งเทียนคำนวณ ATR (5-20) — ค่าน้อย=Band ไว ค่ามาก=Band เสถียร"}
+                              {key === "multiplier" && "ตัวคูณ ATR (1.0-6.0) — ค่าน้อย=Band แคบ สัญญาณเยอะ ค่ามาก=Band กว้าง จับเทรนด์ใหญ่"}
+                            </p>
+                          )}
+                        </div>
+                      </Field>
+                    ))}
+                  </div>
+                )}
 
                 {/* RSI explanation */}
                 {strategyId === "rsi" && (
@@ -740,52 +767,6 @@ export default function KlinesPage() {
                   </div>
                 )}
 
-                {/* Strategy-specific parameter inputs */}
-                {Object.keys(strategyParams).length > 0 && (
-                  <div className="flex flex-wrap items-end gap-3">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground w-full">ปรับค่าพารามิเตอร์</p>
-                    {Object.entries(strategyParams).map(([key, val]) => (
-                      <Field key={key} label={PARAM_LABELS[key] ?? key}>
-                        <div className="space-y-0.5">
-                          <Input
-                            type="number"
-                            step={key === "period" ? 1 : 1}
-                            min={1}
-                            value={val}
-                            onChange={e => setStrategyParams(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
-                            className="w-24"
-                          />
-                          {strategyId === "rsi" && (
-                            <p className="text-[9px] text-muted-foreground/70">
-                              {key === "period" && "จำนวนแท่งเทียนที่ใช้คำนวณ (ค่าทั่วไป: 7, 14, 21)"}
-                              {key === "buyThreshold" && "ค่า RSI ต่ำกว่านี้ = สัญญาณซื้อ"}
-                              {key === "sellThreshold" && "ค่า RSI สูงกว่านี้ = สัญญาณขาย"}
-                            </p>
-                          )}
-                          {strategyId === "smc" && (
-                            <p className="text-[9px] text-muted-foreground/70">
-                              {key === "swingSize" && "แท่งเทียนหา pivot หลัก (10-100) — ค่าน้อย=ไว ค่ามาก=จับเทรนด์ใหญ่"}
-                              {key === "internalSize" && "แท่งเทียนหาโครงสร้างย่อย (2-15) — ค่าน้อย=สัญญาณเยอะ ค่ามาก=กรอง noise"}
-                            </p>
-                          )}
-                          {strategyId === "cm_macd" && (
-                            <p className="text-[9px] text-muted-foreground/70">
-                              {key === "fastLength" && "EMA สั้น (6-21) — ค่าน้อย=ไว ค่ามาก=ช้าแต่แม่นยำ"}
-                              {key === "slowLength" && "EMA ยาว (15-50) — ห่างจาก Fast มาก=Histogram แกว่งแรง"}
-                              {key === "signalLength" && "SMA กรองสัญญาณ (3-20) — ค่าน้อย=cross บ่อย ค่ามาก=กรอง noise"}
-                            </p>
-                          )}
-                          {strategyId === "supertrend" && (
-                            <p className="text-[9px] text-muted-foreground/70">
-                              {key === "atrPeriod" && "แท่งเทียนคำนวณ ATR (5-20) — ค่าน้อย=Band ไว ค่ามาก=Band เสถียร"}
-                              {key === "multiplier" && "ตัวคูณ ATR (1.0-6.0) — ค่าน้อย=Band แคบ สัญญาณเยอะ ค่ามาก=Band กว้าง จับเทรนด์ใหญ่"}
-                            </p>
-                          )}
-                        </div>
-                      </Field>
-                    ))}
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -825,29 +806,6 @@ function ErrorCard({ message }: { message: string }) {
   );
 }
 
-function SummaryCards({ summary }: { summary: { lastClose: number; pctChange: number; highest: number; lowest: number; totalVol: number; avgVol: number } }) {
-  const items = [
-    { label: "ราคาปิดล่าสุด", value: fmtPrice(summary.lastClose), color: "" },
-    { label: "เปลี่ยนแปลง", value: `${summary.pctChange >= 0 ? "+" : ""}${summary.pctChange.toFixed(2)}%`, color: pnlColor(summary.pctChange) },
-    { label: "สูงสุด", value: fmtPrice(summary.highest), color: "text-emerald-500" },
-    { label: "ต่ำสุด", value: fmtPrice(summary.lowest), color: "text-red-500" },
-    { label: "ปริมาณรวม", value: fmtNum(summary.totalVol), color: "" },
-    { label: "ปริมาณเฉลี่ย", value: fmtNum(summary.avgVol), color: "" },
-  ];
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {items.map(i => (
-        <Card size="sm" key={i.label}>
-          <CardContent className="pt-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{i.label}</p>
-            <p className={`text-sm font-semibold tabular-nums ${i.color}`}>{i.value}</p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
 // ─── Indicator Panel ───────────────────────────────────────────
 function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; klines: KlineData[] }) {
   const last = klines.length - 1;
@@ -862,35 +820,6 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
     rows.push({ name: "RSI(14)", value: rsiVal.toFixed(2), signal: sig, color: rsiVal < 30 ? "text-emerald-500" : rsiVal > 70 ? "text-red-500" : "text-muted-foreground" });
   }
 
-  // MACD
-  const m = indicators.macd.macd[last], s = indicators.macd.signal[last];
-  if (m !== null && s !== null) {
-    const sig = m > s ? "ขาขึ้น" : "ขาลง";
-    rows.push({ name: "MACD", value: `${m.toFixed(2)} / ${s.toFixed(2)}`, signal: sig, color: m > s ? "text-emerald-500" : "text-red-500" });
-  }
-
-  // EMA 50/200
-  const e50 = indicators.ema50[last], e200 = indicators.ema200[last];
-  if (e50 !== null) rows.push({ name: "EMA(50)", value: fmtPrice(e50), signal: c > e50 ? "อยู่เหนือ" : "อยู่ใต้", color: c > e50 ? "text-emerald-500" : "text-red-500" });
-  if (e200 !== null) rows.push({ name: "EMA(200)", value: fmtPrice(e200), signal: c > e200 ? "อยู่เหนือ" : "อยู่ใต้", color: c > e200 ? "text-emerald-500" : "text-red-500" });
-  if (e50 !== null && e200 !== null) {
-    rows.push({ name: "Golden Cross", value: e50 > e200 ? "ใช่" : "ไม่", signal: e50 > e200 ? "ขาขึ้น" : "ขาลง", color: e50 > e200 ? "text-emerald-500" : "text-red-500" });
-  }
-
-  // BB
-  const bbU = indicators.bb.upper[last], bbL = indicators.bb.lower[last];
-  if (bbU !== null && bbL !== null) {
-    const sig = c >= bbU ? "ใกล้แถบบน (ขาย)" : c <= bbL ? "ใกล้แถบล่าง (ซื้อ)" : "อยู่ในแถบ";
-    rows.push({ name: "BB(20)", value: `${fmtPrice(bbU)} / ${fmtPrice(bbL)}`, signal: sig, color: c >= bbU ? "text-red-500" : c <= bbL ? "text-emerald-500" : "text-muted-foreground" });
-  }
-
-  // ADX
-  const adxVal = indicators.adx.adx[last], pdi = indicators.adx.plusDI[last], mdi = indicators.adx.minusDI[last];
-  if (adxVal !== null && pdi !== null && mdi !== null) {
-    const trend = adxVal > 25 ? (pdi > mdi ? "แนวโน้มขึ้นแรง" : "แนวโน้มลงแรง") : "ไม่มีแนวโน้มชัดเจน";
-    rows.push({ name: "ADX(14)", value: `${adxVal.toFixed(1)} (+DI:${pdi.toFixed(1)} -DI:${mdi.toFixed(1)})`, signal: trend, color: adxVal > 25 && pdi > mdi ? "text-emerald-500" : adxVal > 25 ? "text-red-500" : "text-muted-foreground" });
-  }
-
   // ATR
   const atrVal = indicators.atr[last];
   if (atrVal !== null) rows.push({ name: "ATR(14)", value: fmtPrice(atrVal), signal: `ความผันผวน ${((atrVal / c) * 100).toFixed(2)}%`, color: "text-muted-foreground" });
@@ -900,24 +829,9 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
   const obvPrev = last > 0 ? indicators.obv[last - 1] : obvVal;
   rows.push({ name: "OBV", value: fmtNum(obvVal), signal: obvVal > obvPrev ? "เพิ่มขึ้น" : "ลดลง", color: obvVal > obvPrev ? "text-emerald-500" : "text-red-500" });
 
-  // MFI
-  const mfiVal = indicators.mfi[last];
-  if (mfiVal !== null) {
-    const sig = mfiVal < 20 ? "ขายมากเกินไป (ซื้อ)" : mfiVal > 80 ? "ซื้อมากเกินไป (ขาย)" : "ปกติ";
-    rows.push({ name: "MFI(14)", value: mfiVal.toFixed(2), signal: sig, color: mfiVal < 20 ? "text-emerald-500" : mfiVal > 80 ? "text-red-500" : "text-muted-foreground" });
-  }
-
   // VWAP
   const vwapVal = indicators.vwap[last];
   rows.push({ name: "VWAP", value: fmtPrice(vwapVal), signal: c > vwapVal ? "อยู่เหนือ (ขาขึ้น)" : "อยู่ใต้ (ขาลง)", color: c > vwapVal ? "text-emerald-500" : "text-red-500" });
-
-  // Ichimoku
-  const ich = indicators.ichimoku;
-  if (ich.tenkan[last] !== null && ich.kijun[last] !== null) {
-    const cloudTop = Math.max(ich.senkouA[last] ?? 0, ich.senkouB[last] ?? 0);
-    const sig = c > cloudTop ? "เหนือเมฆ (ขาขึ้น)" : "ใต้เมฆ (ขาลง)";
-    rows.push({ name: "Ichimoku", value: `T:${fmtPrice(ich.tenkan[last]!)} K:${fmtPrice(ich.kijun[last]!)}`, signal: sig, color: c > cloudTop ? "text-emerald-500" : "text-red-500" });
-  }
 
   // CDC ActionZone
   const cdc = indicators.cdcActionZone;
@@ -1163,8 +1077,8 @@ function BacktestResults({ result }: { result: BacktestResult }) {
               <span
                 key={i}
                 className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${t.pnlPct >= 0
-                    ? "bg-emerald-500/10 text-emerald-500"
-                    : "bg-red-500/10 text-red-500"
+                  ? "bg-emerald-500/10 text-emerald-500"
+                  : "bg-red-500/10 text-red-500"
                   }`}
               >
                 #{i + 1} {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%

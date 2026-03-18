@@ -39,13 +39,6 @@ export interface BacktestResult {
 
 export type StrategyId =
   | "rsi"
-  | "macd"
-  | "ema_cross"
-  | "bb"
-  | "adx_di"
-  | "ichimoku"
-  | "mfi"
-  | "combined"
   | "cdc_actionzone"
   | "smc"
   | "cm_macd"
@@ -64,48 +57,6 @@ export const STRATEGIES: StrategyConfig[] = [
     name: "RSI Overbought/Oversold",
     description: "Buy RSI < 30, Sell RSI > 70",
     params: { period: 14, buyThreshold: 30, sellThreshold: 70 },
-  },
-  {
-    id: "macd",
-    name: "MACD Crossover",
-    description: "Buy MACD crosses above Signal, Sell crosses below",
-    params: {},
-  },
-  {
-    id: "ema_cross",
-    name: "EMA Golden/Death Cross",
-    description: "Buy EMA(50) > EMA(200), Sell EMA(50) < EMA(200)",
-    params: {},
-  },
-  {
-    id: "bb",
-    name: "Bollinger Bands Bounce",
-    description: "Buy near lower band, Sell near upper band",
-    params: {},
-  },
-  {
-    id: "adx_di",
-    name: "ADX + DI Trend",
-    description: "Buy +DI > -DI & ADX > 25, Sell +DI < -DI",
-    params: { adxThreshold: 25 },
-  },
-  {
-    id: "ichimoku",
-    name: "Ichimoku Cloud",
-    description: "Buy price above cloud + Tenkan > Kijun, Sell below",
-    params: {},
-  },
-  {
-    id: "mfi",
-    name: "MFI Overbought/Oversold",
-    description: "Buy MFI < 20, Sell MFI > 80",
-    params: { buyThreshold: 20, sellThreshold: 80 },
-  },
-  {
-    id: "combined",
-    name: "Combined (RSI + MACD + EMA)",
-    description: "Buy when 2/3 agree BUY, Sell when 2/3 agree SELL",
-    params: {},
   },
   {
     id: "cdc_actionzone",
@@ -136,122 +87,13 @@ export const STRATEGIES: StrategyConfig[] = [
 // ─── Signal Generators ─────────────────────────────────────────
 type SignalFn = (klines: KlineData[], ind: AllIndicators, params: Record<string, number>) => SignalAction[];
 
-function rsiStrategy(klines: KlineData[], ind: AllIndicators, params: Record<string, number>): SignalAction[] {
+function rsiStrategy(_klines: KlineData[], ind: AllIndicators, params: Record<string, number>): SignalAction[] {
   const buyTh = params.buyThreshold ?? 30;
   const sellTh = params.sellThreshold ?? 70;
   return ind.rsi.map((v) => {
     if (v === null) return "HOLD";
     if (v < buyTh) return "BUY";
     if (v > sellTh) return "SELL";
-    return "HOLD";
-  });
-}
-
-function macdStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
-  const { macd: m, signal: s } = ind.macd;
-  const signals: SignalAction[] = [];
-  for (let i = 0; i < m.length; i++) {
-    if (i === 0 || m[i] === null || s[i] === null || m[i - 1] === null || s[i - 1] === null) {
-      signals.push("HOLD"); continue;
-    }
-    const prevDiff = m[i - 1]! - s[i - 1]!;
-    const currDiff = m[i]! - s[i]!;
-    if (prevDiff <= 0 && currDiff > 0) signals.push("BUY");
-    else if (prevDiff >= 0 && currDiff < 0) signals.push("SELL");
-    else signals.push("HOLD");
-  }
-  return signals;
-}
-
-function emaCrossStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
-  const signals: SignalAction[] = [];
-  for (let i = 0; i < ind.ema50.length; i++) {
-    if (i === 0 || ind.ema50[i] === null || ind.ema200[i] === null || ind.ema50[i - 1] === null || ind.ema200[i - 1] === null) {
-      signals.push("HOLD"); continue;
-    }
-    const prevAbove = ind.ema50[i - 1]! > ind.ema200[i - 1]!;
-    const currAbove = ind.ema50[i]! > ind.ema200[i]!;
-    if (!prevAbove && currAbove) signals.push("BUY");
-    else if (prevAbove && !currAbove) signals.push("SELL");
-    else signals.push("HOLD");
-  }
-  return signals;
-}
-
-function bbStrategy(klines: KlineData[], ind: AllIndicators): SignalAction[] {
-  const c = klines.map(k => +k.close);
-  return c.map((price, i) => {
-    if (ind.bb.lower[i] === null || ind.bb.upper[i] === null) return "HOLD";
-    if (price <= ind.bb.lower[i]!) return "BUY";
-    if (price >= ind.bb.upper[i]!) return "SELL";
-    return "HOLD";
-  });
-}
-
-function adxDiStrategy(_k: KlineData[], ind: AllIndicators, params: Record<string, number>): SignalAction[] {
-  const th = params.adxThreshold ?? 25;
-  const signals: SignalAction[] = [];
-  for (let i = 0; i < ind.adx.adx.length; i++) {
-    const a = ind.adx.adx[i], pdi = ind.adx.plusDI[i], mdi = ind.adx.minusDI[i];
-    if (a === null || pdi === null || mdi === null) { signals.push("HOLD"); continue; }
-    if (i === 0) { signals.push("HOLD"); continue; }
-    const prevPDI = ind.adx.plusDI[i - 1], prevMDI = ind.adx.minusDI[i - 1];
-    if (prevPDI === null || prevMDI === null) { signals.push("HOLD"); continue; }
-    const crossed_up = prevPDI <= prevMDI && pdi > mdi;
-    const crossed_down = prevPDI >= prevMDI && pdi < mdi;
-    if (crossed_up && a > th) signals.push("BUY");
-    else if (crossed_down) signals.push("SELL");
-    else signals.push("HOLD");
-  }
-  return signals;
-}
-
-function ichimokuStrategy(klines: KlineData[], ind: AllIndicators): SignalAction[] {
-  const c = klines.map(k => +k.close);
-  const { tenkan, kijun, senkouA, senkouB } = ind.ichimoku;
-  const signals: SignalAction[] = [];
-  for (let i = 0; i < klines.length; i++) {
-    if (tenkan[i] === null || kijun[i] === null || senkouA[i] === null || senkouB[i] === null) {
-      signals.push("HOLD"); continue;
-    }
-    const cloudTop = Math.max(senkouA[i]!, senkouB[i]!);
-    const cloudBottom = Math.min(senkouA[i]!, senkouB[i]!);
-    const aboveCloud = c[i] > cloudTop;
-    const belowCloud = c[i] < cloudBottom;
-    const tenkanAbove = tenkan[i]! > kijun[i]!;
-
-    if (i === 0) { signals.push("HOLD"); continue; }
-    const prevTenkanAbove = tenkan[i - 1] !== null && kijun[i - 1] !== null && tenkan[i - 1]! > kijun[i - 1]!;
-
-    if (aboveCloud && !prevTenkanAbove && tenkanAbove) signals.push("BUY");
-    else if (belowCloud && prevTenkanAbove && !tenkanAbove) signals.push("SELL");
-    else signals.push("HOLD");
-  }
-  return signals;
-}
-
-function mfiStrategy(_k: KlineData[], ind: AllIndicators, params: Record<string, number>): SignalAction[] {
-  const buyTh = params.buyThreshold ?? 20;
-  const sellTh = params.sellThreshold ?? 80;
-  return ind.mfi.map((v) => {
-    if (v === null) return "HOLD";
-    if (v < buyTh) return "BUY";
-    if (v > sellTh) return "SELL";
-    return "HOLD";
-  });
-}
-
-function combinedStrategy(klines: KlineData[], ind: AllIndicators, params: Record<string, number>): SignalAction[] {
-  const r = rsiStrategy(klines, ind, { buyThreshold: 30, sellThreshold: 70 });
-  const m = macdStrategy(klines, ind);
-  const e = emaCrossStrategy(klines, ind);
-  return klines.map((_, i) => {
-    let buyVotes = 0, sellVotes = 0;
-    if (r[i] === "BUY") buyVotes++; if (r[i] === "SELL") sellVotes++;
-    if (m[i] === "BUY") buyVotes++; if (m[i] === "SELL") sellVotes++;
-    if (e[i] === "BUY") buyVotes++; if (e[i] === "SELL") sellVotes++;
-    if (buyVotes >= 2) return "BUY";
-    if (sellVotes >= 2) return "SELL";
     return "HOLD";
   });
 }
@@ -291,13 +133,6 @@ function supertrendStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[]
 
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
-  macd: macdStrategy,
-  ema_cross: emaCrossStrategy,
-  bb: bbStrategy,
-  adx_di: adxDiStrategy,
-  ichimoku: ichimokuStrategy,
-  mfi: mfiStrategy,
-  combined: combinedStrategy,
   cdc_actionzone: cdcActionZoneStrategy,
   smc: smcStrategy,
   cm_macd: cmMacdStrategy,
