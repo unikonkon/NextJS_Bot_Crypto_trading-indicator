@@ -93,7 +93,7 @@ function MiniCandle({ kline }: { kline: KlineData }) {
 }
 
 // ─── Equity Chart (pure CSS bars) ──────────────────────────────
-function EquityChart({ curve }: { curve: number[] }) {
+function EquityChart({ curve, trades }: { curve: number[]; trades: Trade[] }) {
   const step = Math.max(1, Math.floor(curve.length / 200));
   const sampled = curve.filter((_, i) => i % step === 0 || i === curve.length - 1);
   const max = Math.max(...sampled, 0.01);
@@ -101,16 +101,33 @@ function EquityChart({ curve }: { curve: number[] }) {
   const range = max - min || 1;
   const zeroY = ((max - 0) / range) * 100;
 
+  // Map trade exit indices to sampled bar indices
+  const tradeMarkers: { barIdx: number; pnlPct: number }[] = [];
+  for (const t of trades) {
+    const sampledIdx = Math.round(t.exitIdx / step);
+    const clampedIdx = Math.min(sampledIdx, sampled.length - 1);
+    tradeMarkers.push({ barIdx: clampedIdx, pnlPct: t.pnlPct });
+  }
+
+  // Group markers by barIdx (multiple trades may map to same sampled bar)
+  const markerMap = new Map<number, number[]>();
+  for (const m of tradeMarkers) {
+    const arr = markerMap.get(m.barIdx) || [];
+    arr.push(m.pnlPct);
+    markerMap.set(m.barIdx, arr);
+  }
+
   return (
-    <div className="relative h-32 w-full">
+    <div className="relative h-40 w-full">
       <div className="absolute left-0 right-0 border-t border-dashed border-muted-foreground/30" style={{ top: `${zeroY}%` }} />
       <div className="absolute left-1 text-[9px] text-muted-foreground" style={{ top: `${Math.max(zeroY - 5, 0)}%` }}>0%</div>
       <div className="flex h-full items-end gap-px">
         {sampled.map((val, i) => {
           const h = Math.abs(val) / range * 100;
           const isPos = val >= 0;
+          const markers = markerMap.get(i);
           return (
-            <div key={i} className="flex-1 flex flex-col justify-end h-full relative">
+            <div key={i} className="flex-1 flex flex-col justify-end h-full relative group">
               {isPos ? (
                 <div
                   className="w-full bg-emerald-500/60 absolute"
@@ -121,6 +138,30 @@ function EquityChart({ curve }: { curve: number[] }) {
                   className="w-full bg-red-500/60 absolute"
                   style={{ top: `${zeroY}%`, height: `${Math.max(h, 0.5)}%` }}
                 />
+              )}
+              {markers && (
+                <>
+                  {/* Trade marker dot */}
+                  <div
+                    className={`absolute w-1.5 h-1.5 rounded-full left-1/2 -translate-x-1/2 z-10 ${markers[markers.length - 1] >= 0 ? "bg-emerald-400" : "bg-red-400"}`}
+                    style={{
+                      top: isPos
+                        ? `${zeroY - (val / range) * 100 - 2}%`
+                        : `${zeroY + (Math.abs(val) / range) * 100}%`,
+                    }}
+                  />
+                  {/* Tooltip on hover */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20 pointer-events-none">
+                    <div className="bg-popover border border-border rounded px-1.5 py-0.5 shadow-md whitespace-nowrap">
+                      {markers.map((pnl, mi) => (
+                        <div key={mi} className={`text-[9px] font-medium tabular-nums ${pnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
+                        </div>
+                      ))}
+                      <div className="text-[8px] text-muted-foreground tabular-nums">สะสม: {val >= 0 ? "+" : ""}{val.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           );
@@ -728,9 +769,31 @@ function BacktestResults({ result }: { result: BacktestResult }) {
 
       {/* Equity Curve */}
       <Card size="sm">
-        <CardHeader className="border-b"><CardTitle>กราฟเงินทุน (กำไร/ขาดทุนสะสม %)</CardTitle></CardHeader>
+        <CardHeader className="border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle>กราฟเงินทุน (กำไร/ขาดทุนสะสม %)</CardTitle>
+            <span className={`text-lg font-bold tabular-nums ${pnlColor(result.totalPnlPct)}`}>
+              กำไรรวม: {result.totalPnlPct >= 0 ? "+" : ""}{result.totalPnlPct.toFixed(2)}%
+            </span>
+          </div>
+        </CardHeader>
         <CardContent className="pt-3">
-          <EquityChart curve={result.equityCurve} />
+          <EquityChart curve={result.equityCurve} trades={result.trades} />
+          {/* Trade P&L legend */}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {result.trades.map((t, i) => (
+              <span
+                key={i}
+                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${
+                  t.pnlPct >= 0
+                    ? "bg-emerald-500/10 text-emerald-500"
+                    : "bg-red-500/10 text-red-500"
+                }`}
+              >
+                #{i + 1} {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%
+              </span>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
