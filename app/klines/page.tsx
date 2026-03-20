@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import KlineGraph from "@/app/klines/ui/graph";
 
 // ─── Constants ─────────────────────────────────────────────────
 const POPULAR_SYMBOLS = [
@@ -420,6 +421,16 @@ export default function KlinesPage() {
         {/* Error */}
         {error && <ErrorCard message={error} />}
 
+        {/* Price Chart (lightweight-charts) */}
+        {klines.length > 0 && (
+          <KlineGraph
+            klines={klines}
+            indicators={indicators}
+            btResult={btResult}
+            strategyId={strategyId}
+          />
+        )}
+
         {/* ═══ BACKTEST ═══ */}
         {klines.length > 0 && (
           <Card size="sm">
@@ -771,6 +782,7 @@ export default function KlinesPage() {
             </CardContent>
           </Card>
         )}
+
 
         {/* Backtest Results */}
         {btResult && <BacktestResults result={btResult} />}
