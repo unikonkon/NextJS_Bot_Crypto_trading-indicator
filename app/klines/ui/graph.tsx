@@ -106,19 +106,47 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
   }, [klines]);
 
   // ─── Overlay & sub-chart toggles ────────────────────────────
-  const [showVwap, setShowVwap] = useState(true);
+  const [showVwap, setShowVwap] = useState(false);
   const [showCdcEma, setShowCdcEma] = useState(false);
   const [showSupertrendLine, setShowSupertrendLine] = useState(false);
   const [showSmcOb, setShowSmcOb] = useState(false);
+  const [showSR, setShowSR] = useState(false);
+  const [showTrendlines, setShowTrendlines] = useState(false);
+  const [showUtBot, setShowUtBot] = useState(false);
+  const [showMsbOb, setShowMsbOb] = useState(false);
   const [showRsiToggle, setShowRsiToggle] = useState(true);
   const [showMacdToggle, setShowMacdToggle] = useState(true);
-  const [showSqzToggle, setShowSqzToggle] = useState(true);
+  const [showSqzToggle, setShowSqzToggle] = useState(false);
 
-  // Auto-enable matching overlay when strategy changes
+  // Reset all then enable only the matching overlay/panel when strategy changes
   useEffect(() => {
-    if (strategyId === "cdc_actionzone") setShowCdcEma(true);
-    if (strategyId === "supertrend") setShowSupertrendLine(true);
-    if (strategyId === "smc") setShowSmcOb(true);
+    // Reset overlays
+    setShowVwap(false);
+    setShowCdcEma(false);
+    setShowSupertrendLine(false);
+    setShowSmcOb(false);
+    setShowSR(false);
+    setShowTrendlines(false);
+    setShowUtBot(false);
+    setShowMsbOb(false);
+    // Reset panels
+    setShowRsiToggle(false);
+    setShowMacdToggle(false);
+    setShowSqzToggle(false);
+
+    // Enable matching overlay
+    switch (strategyId) {
+      case "rsi":             setShowRsiToggle(true); break;
+      case "cdc_actionzone":  setShowCdcEma(true); break;
+      case "smc":             setShowSmcOb(true); break;
+      case "cm_macd":         setShowMacdToggle(true); break;
+      case "supertrend":      setShowSupertrendLine(true); break;
+      case "squeeze_momentum": setShowSqzToggle(true); break;
+      case "msb_ob":          setShowMsbOb(true); break;
+      case "support_resistance": setShowSR(true); break;
+      case "trendlines":      setShowTrendlines(true); break;
+      case "ut_bot":          setShowUtBot(true); break;
+    }
   }, [strategyId]);
 
   // Determine which sub-panels to show
@@ -318,6 +346,124 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
           if (startTime && endTime) {
             chart.addSeries(LineSeries, {
               color: ob.bias === "bullish" ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)",
+              lineWidth: 1,
+              lineStyle: 2,
+              priceLineVisible: false,
+              lastValueVisible: false,
+              crosshairMarkerVisible: false,
+            }).setData([
+              { time: startTime, value: midPrice },
+              { time: endTime, value: midPrice },
+            ]);
+          }
+        }
+      }
+
+      // Support & Resistance levels
+      if (showSR) {
+        const sr = indicators.supportResistance;
+        const resData = sr.resistance
+          .map((v, i) => (v !== null ? { time: times[i], value: v } : null))
+          .filter(Boolean) as { time: UTCTimestamp; value: number }[];
+        const supData = sr.support
+          .map((v, i) => (v !== null ? { time: times[i], value: v } : null))
+          .filter(Boolean) as { time: UTCTimestamp; value: number }[];
+
+        chart.addSeries(LineSeries, {
+          color: "#ef4444",
+          lineWidth: 2,
+          lineStyle: 0,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(resData);
+
+        chart.addSeries(LineSeries, {
+          color: "#3b82f6",
+          lineWidth: 2,
+          lineStyle: 0,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(supData);
+      }
+
+      // Trendlines — skip leading zeros (before first pivot is found)
+      if (showTrendlines) {
+        const tl = indicators.trendlines;
+        const firstValidUpper = tl.upper.findIndex(v => v !== null && v > 0);
+        const firstValidLower = tl.lower.findIndex(v => v !== null && v > 0);
+
+        const upperData = tl.upper
+          .map((v, i) => (i >= firstValidUpper && v !== null && v > 0 ? { time: times[i], value: v } : null))
+          .filter(Boolean) as { time: UTCTimestamp; value: number }[];
+        const lowerData = tl.lower
+          .map((v, i) => (i >= firstValidLower && v !== null && v > 0 ? { time: times[i], value: v } : null))
+          .filter(Boolean) as { time: UTCTimestamp; value: number }[];
+
+        chart.addSeries(LineSeries, {
+          color: "rgba(239,68,68,0.6)",
+          lineWidth: 1,
+          lineStyle: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(upperData);
+
+        chart.addSeries(LineSeries, {
+          color: "rgba(20,184,166,0.6)",
+          lineWidth: 1,
+          lineStyle: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(lowerData);
+      }
+
+      // UT Bot trailing stop
+      if (showUtBot) {
+        const ub = indicators.utBot;
+        const upData: ({ time: UTCTimestamp; value: number } | { time: UTCTimestamp })[] = [];
+        const dnData: ({ time: UTCTimestamp; value: number } | { time: UTCTimestamp })[] = [];
+
+        for (let i = 0; i < klines.length; i++) {
+          const t = times[i];
+          const val = ub.trailingStop[i];
+          const p = ub.pos[i];
+          if (val === null) { upData.push({ time: t }); dnData.push({ time: t }); continue; }
+          if (p === 1) { upData.push({ time: t, value: val }); dnData.push({ time: t }); }
+          else if (p === -1) { dnData.push({ time: t, value: val }); upData.push({ time: t }); }
+          else { upData.push({ time: t, value: val }); dnData.push({ time: t }); }
+        }
+
+        chart.addSeries(LineSeries, {
+          color: "#10b981",
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(upData as any);
+
+        chart.addSeries(LineSeries, {
+          color: "#ef4444",
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(dnData as any);
+      }
+
+      // MSB Order Blocks
+      if (showMsbOb) {
+        const msb = indicators.msbOb;
+        const activeOBsMsb = msb.orderBlocks.filter(ob => !ob.broken);
+        for (const ob of activeOBsMsb.slice(-10)) {
+          const midPrice = (ob.high + ob.low) / 2;
+          const startTime = times[ob.startIndex];
+          const endTime = times[klines.length - 1];
+          if (startTime && endTime) {
+            chart.addSeries(LineSeries, {
+              color: ob.type.startsWith("Bu") ? "rgba(16,185,129,0.5)" : "rgba(239,68,68,0.5)",
               lineWidth: 1,
               lineStyle: 2,
               priceLineVisible: false,
@@ -682,7 +828,7 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
       sqzChartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [klines, indicators, btResult, strategyId, isDark, showVwap, showCdcEma, showSupertrendLine, showSmcOb, showRsi, showMacd, showSqz]);
+  }, [klines, indicators, btResult, strategyId, isDark, showVwap, showCdcEma, showSupertrendLine, showSmcOb, showSR, showTrendlines, showUtBot, showMsbOb, showRsi, showMacd, showSqz]);
 
   if (klines.length === 0) return null;
 
@@ -727,11 +873,34 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
           <OverlayToggle label="CDC EMA" color="#3b82f6" secondColor="#f59e0b" active={showCdcEma} onToggle={() => setShowCdcEma(v => !v)} />
           <OverlayToggle label="Supertrend" color="#10b981" secondColor="#ef4444" active={showSupertrendLine} onToggle={() => setShowSupertrendLine(v => !v)} />
           <OverlayToggle label="SMC OB" color="#6b7280" active={showSmcOb} onToggle={() => setShowSmcOb(v => !v)} />
+          <OverlayToggle label="S/R" color="#ef4444" secondColor="#3b82f6" active={showSR} onToggle={() => setShowSR(v => !v)} />
+          <OverlayToggle label="Trendlines" color="#14b8a6" secondColor="#ef4444" active={showTrendlines} onToggle={() => setShowTrendlines(v => !v)} />
+          <OverlayToggle label="UT Bot" color="#10b981" secondColor="#ef4444" active={showUtBot} onToggle={() => setShowUtBot(v => !v)} />
+          <OverlayToggle label="MSB-OB" color="#10b981" secondColor="#ef4444" active={showMsbOb} onToggle={() => setShowMsbOb(v => !v)} />
           <span className="text-[9px] text-muted-foreground/30 mx-0.5">|</span>
           <span className="text-[9px] font-medium text-muted-foreground/60 uppercase tracking-wider mr-1">Panel:</span>
           <OverlayToggle label="RSI" color="#a78bfa" active={showRsiToggle} onToggle={() => setShowRsiToggle(v => !v)} />
           <OverlayToggle label="MACD" color="#22d3ee" active={showMacdToggle} onToggle={() => setShowMacdToggle(v => !v)} />
           <OverlayToggle label="SQZ Mom" color="#84cc16" active={showSqzToggle} onToggle={() => setShowSqzToggle(v => !v)} />
+          <span className="text-[9px] text-muted-foreground/30 mx-0.5">|</span>
+          <button
+            onClick={() => {
+              setShowVwap(false);
+              setShowCdcEma(false);
+              setShowSupertrendLine(false);
+              setShowSmcOb(false);
+              setShowSR(false);
+              setShowTrendlines(false);
+              setShowUtBot(false);
+              setShowMsbOb(false);
+              setShowRsiToggle(false);
+              setShowMacdToggle(false);
+              setShowSqzToggle(false);
+            }}
+            className="px-1.5 py-0.5 rounded text-[9px] font-medium text-muted-foreground/50 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer select-none"
+          >
+            Reset
+          </button>
         </div>
       )}
 

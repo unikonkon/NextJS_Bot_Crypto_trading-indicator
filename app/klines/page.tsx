@@ -58,6 +58,15 @@ const PARAM_LABELS: Record<string, string> = {
   bbMult: "BB MultFactor",
   kcLength: "KC Length",
   kcMult: "KC MultFactor",
+  zigzagLen: "ZigZag Length",
+  fibFactor: "Fib Factor",
+  leftBars: "Left Bars",
+  rightBars: "Right Bars",
+  volumeThresh: "Volume Threshold",
+  trendLength: "Swing Lookback",
+  trendMult: "Slope Mult",
+  keyValue: "Key Value",
+  utAtrPeriod: "ATR Period",
 };
 
 // ─── Formatting ────────────────────────────────────────────────
@@ -457,7 +466,7 @@ export default function KlinesPage() {
                           setStrategyParams(strat ? { ...strat.params } : {});
                         }
                       }}>
-                        <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="w-72"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                         </SelectContent>
@@ -531,6 +540,31 @@ export default function KlinesPage() {
                               {key === "bbMult" && "BB Multiplier (1.0-3.0) — ค่าน้อย=BB แคบ ค่ามาก=BB กว้าง"}
                               {key === "kcLength" && "Keltner Channel period (10-30) — ค่าน้อย=KC ไว ค่ามาก=KC เสถียร"}
                               {key === "kcMult" && "KC Multiplier (1.0-3.0) — ค่าน้อย=Squeeze ง่าย ค่ามาก=Squeeze ยาก"}
+                            </p>
+                          )}
+                          {strategyId === "msb_ob" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "zigzagLen" && "ZigZag period (5-20) — ค่าน้อย=swing points บ่อย ค่ามาก=จับเทรนด์ใหญ่"}
+                              {key === "fibFactor" && "Fib confirmation (0.1-0.5) — ค่ามาก=ต้อง break แรงกว่าจึงนับเป็น MSB"}
+                            </p>
+                          )}
+                          {strategyId === "support_resistance" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "leftBars" && "Left Bars (5-30) — แท่งซ้ายของ pivot ค่ามาก=S/R แข็งแกร่งกว่า"}
+                              {key === "rightBars" && "Right Bars (5-30) — แท่งขวาของ pivot ค่ามาก=ยืนยันชัดกว่าแต่ช้า"}
+                              {key === "volumeThresh" && "Volume % (10-50) — Volume oscillator ขั้นต่ำสำหรับ break ที่มีนัย"}
+                            </p>
+                          )}
+                          {strategyId === "trendlines" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "trendLength" && "Swing Lookback (5-30) — ค่าน้อย=เส้นเทรนด์เปลี่ยนบ่อย ค่ามาก=เสถียร"}
+                              {key === "trendMult" && "Slope Mult (0.5-3.0) — ค่ามาก=เส้นเทรนด์ชันขึ้น break ง่ายขึ้น"}
+                            </p>
+                          )}
+                          {strategyId === "ut_bot" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "keyValue" && "Key Value (0.5-5) — ตัวคูณ ATR ค่าน้อย=ไว ค่ามาก=กรอง noise"}
+                              {key === "utAtrPeriod" && "ATR Period (5-20) — ค่าน้อย=trailing stop ไว ค่ามาก=เรียบกว่า"}
                             </p>
                           )}
                         </div>
@@ -879,6 +913,77 @@ export default function KlinesPage() {
                   </div>
                 )}
 
+                {/* MSB-OB explanation */}
+                {strategyId === "msb_ob" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Market Structure Break &amp; Order Block (MSB-OB) คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      ใช้ ZigZag ตรวจจับ Swing Points แล้ววิเคราะห์ว่าราคา Break โครงสร้างตลาดเมื่อไหร่ (MSB)
+                      พร้อมระบุ Order Block — แท่งเทียนก่อน break ที่เป็นโซนแนวรับ/ต้านที่แข็งแกร่ง
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → Bullish MSB (โครงสร้างเปลี่ยนเป็นขาขึ้น)</span>
+                      <span className="text-red-500">SELL → Bearish MSB (โครงสร้างเปลี่ยนเป็นขาลง)</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      <span className="text-emerald-500/70">Bu-OB</span> = Bullish Order Block (แนวรับ) |{" "}
+                      <span className="text-red-500/70">Be-OB</span> = Bearish Order Block (แนวต้าน)
+                    </div>
+                  </div>
+                )}
+
+                {/* S/R explanation */}
+                {strategyId === "support_resistance" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Support &amp; Resistance Levels with Breaks [LuxAlgo] คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      ตรวจจับ Pivot High/Low เพื่อวาดเส้น Resistance (แนวต้าน) และ Support (แนวรับ)
+                      เมื่อราคาทะลุเส้นพร้อม Volume ที่สูง (Volume Oscillator &gt; Threshold) = สัญญาณ Break ที่มีนัยสำคัญ
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → ทะลุ Resistance + Volume สูง</span>
+                      <span className="text-red-500">SELL → หลุด Support + Volume สูง</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Bull Wick = ทะลุ Resistance แต่มี wick ยาว (สัญญาณอ่อน) | Bear Wick = หลุด Support แต่มี wick ยาว
+                    </div>
+                  </div>
+                )}
+
+                {/* Trendlines explanation */}
+                {strategyId === "trendlines" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Trendlines with Breaks [LuxAlgo] คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      วาดเส้น Trendline แบบ Dynamic จาก Pivot Points โดยใช้ ATR/Stdev เป็นความชัน (slope)
+                      เส้นบน = เส้นแนวต้านจาก Pivot High, เส้นล่าง = เส้นแนวรับจาก Pivot Low
+                      เมื่อราคาทะลุเส้น = สัญญาณ Break
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → ราคาทะลุขึ้นเหนือเส้นแนวต้าน (Upper Break)</span>
+                      <span className="text-red-500">SELL → ราคาหลุดลงใต้เส้นแนวรับ (Lower Break)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* UT Bot explanation */}
+                {strategyId === "ut_bot" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">UT Bot Alerts คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      ใช้ ATR Trailing Stop ที่ปรับตัวตามทิศทางราคา — เมื่อราคาขึ้น stop จะยกตัวตาม,
+                      เมื่อราคาลง stop จะลดลงตาม เมื่อราคาข้ามผ่าน trailing stop = สัญญาณเปลี่ยนเทรนด์
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → ราคาข้ามขึ้นเหนือ ATR Trailing Stop</span>
+                      <span className="text-red-500">SELL → ราคาข้ามลงใต้ ATR Trailing Stop</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Key Value ยิ่งมาก = Trailing Stop ห่างจากราคามากขึ้น = กรอง noise ได้ดี แต่เข้า/ออกช้ากว่า
+                    </div>
+                  </div>
+                )}
+
               </div>
             </CardContent>
           </Card>
@@ -1119,6 +1224,62 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
       value: sqzVal.toFixed(4),
       signal: `${sc?.label ?? "N/A"} | ${sqzIsOn ? "SQUEEZE ON (บีบตัว)" : "SQUEEZE OFF"}${sqzSignal ? ` | ${sqzSignal}` : ""}`,
       color: sc?.color ?? "text-muted-foreground",
+    });
+  }
+
+  // MSB-OB
+  const msb = indicators.msbOb;
+  const msbMarket = msb.market[last];
+  const msbSignal = msb.signal[last];
+  const activeOBsMsb = msb.orderBlocks.filter(ob => !ob.broken);
+  const lastMsb = msb.msbSignals.length > 0 ? msb.msbSignals[msb.msbSignals.length - 1] : null;
+  rows.push({
+    name: "MSB-OB",
+    value: msbMarket === 1 ? "Bullish" : msbMarket === -1 ? "Bearish" : "N/A",
+    signal: `${lastMsb ? `${lastMsb.bias} MSB` : "N/A"} | OB: ${activeOBsMsb.length}${msbSignal ? ` | ${msbSignal}` : ""}`,
+    color: msbMarket === 1 ? "text-emerald-500" : msbMarket === -1 ? "text-red-500" : "text-muted-foreground",
+  });
+
+  // Support & Resistance
+  const sr = indicators.supportResistance;
+  const srRes = sr.resistance[last];
+  const srSup = sr.support[last];
+  const srSignal = sr.signal[last];
+  if (srRes !== null || srSup !== null) {
+    rows.push({
+      name: "S/R Levels",
+      value: `R:${srRes !== null ? fmtPrice(srRes) : "-"} S:${srSup !== null ? fmtPrice(srSup) : "-"}`,
+      signal: `${c > (srRes ?? Infinity) ? "เหนือ Resistance" : c < (srSup ?? 0) ? "ใต้ Support" : "ระหว่าง S/R"}${srSignal ? ` | ${srSignal}` : ""}`,
+      color: sr.breakUp[last] ? "text-emerald-500" : sr.breakDown[last] ? "text-red-500" : "text-muted-foreground",
+    });
+  }
+
+  // Trendlines
+  const tl = indicators.trendlines;
+  const tlUpper = tl.upper[last];
+  const tlLower = tl.lower[last];
+  const tlSignal = tl.signal[last];
+  if (tlUpper !== null || tlLower !== null) {
+    rows.push({
+      name: "Trendlines",
+      value: `U:${tlUpper !== null ? fmtPrice(tlUpper) : "-"} L:${tlLower !== null ? fmtPrice(tlLower) : "-"}`,
+      signal: `${tl.breakUp[last] ? "Break Up!" : tl.breakDown[last] ? "Break Down!" : "ภายในเทรนด์"}${tlSignal ? ` | ${tlSignal}` : ""}`,
+      color: tl.breakUp[last] ? "text-emerald-500" : tl.breakDown[last] ? "text-red-500" : "text-muted-foreground",
+    });
+  }
+
+  // UT Bot
+  const ub = indicators.utBot;
+  const ubStop = ub.trailingStop[last];
+  const ubPos = ub.pos[last];
+  const ubSignal = ub.signal[last];
+  if (ubStop !== null) {
+    const dist = ((c - ubStop) / ubStop) * 100;
+    rows.push({
+      name: "UT Bot",
+      value: fmtPrice(ubStop),
+      signal: `${ubPos === 1 ? "Long (ขาขึ้น)" : ubPos === -1 ? "Short (ขาลง)" : "Neutral"} | Stop ${dist >= 0 ? "+" : ""}${dist.toFixed(2)}%${ubSignal ? ` | ${ubSignal}` : ""}`,
+      color: ubPos === 1 ? "text-emerald-500" : ubPos === -1 ? "text-red-500" : "text-muted-foreground",
     });
   }
 

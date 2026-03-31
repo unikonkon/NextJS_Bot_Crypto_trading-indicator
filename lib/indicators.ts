@@ -1073,6 +1073,434 @@ export function squeezeMomentum(
   return { value, histColor, sqzOn, sqzOff, noSqz, signal };
 }
 
+// ─── Market Structure Break & Order Block (MSB-OB) ─────────────
+// ZigZag-based market structure detection with Order Blocks and
+// Breaker Blocks. Converted from EmreKb PineScript v5.
+
+export interface MSBOrderBlock {
+  startIndex: number;
+  high: number;
+  low: number;
+  type: "Bu-OB" | "Be-OB" | "Bu-BB" | "Be-BB" | "Bu-MB" | "Be-MB";
+  broken: boolean;
+}
+
+export interface MSBResult {
+  trend: (1 | -1 | null)[];          // zigzag trend
+  market: (1 | -1 | null)[];         // market structure (1=bull, -1=bear)
+  msbSignals: { index: number; bias: "bullish" | "bearish"; level: number }[];
+  orderBlocks: MSBOrderBlock[];
+  signal: ("BUY" | "SELL" | null)[];
+}
+
+export function msbOrderBlock(
+  klines: KlineData[],
+  zigzagLen = 9,
+  fibFactor = 0.33,
+): MSBResult {
+  const h = highs(klines);
+  const l = lows(klines);
+  const c = closes(klines);
+  const o = klines.map(k => +k.open);
+  const len = klines.length;
+
+  // ZigZag trend detection
+  const highestArr = highest(h, zigzagLen);
+  const lowestArr = lowest(l, zigzagLen);
+
+  const trend: (1 | -1 | null)[] = new Array(len).fill(null);
+  const market: (1 | -1 | null)[] = new Array(len).fill(null);
+  const signal: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
+  const msbSignals: MSBResult["msbSignals"] = [];
+  const orderBlocks: MSBOrderBlock[] = [];
+
+  // Track swing points
+  const highPoints: { price: number; index: number }[] = [];
+  const lowPoints: { price: number; index: number }[] = [];
+
+  let curTrend: 1 | -1 = 1;
+  let curMarket: 1 | -1 = 1;
+
+  for (let i = zigzagLen; i < len; i++) {
+    const toUp = h[i] >= (highestArr[i] ?? 0);
+    const toDown = l[i] <= (lowestArr[i] ?? Infinity);
+
+    const prevTrend: 1 | -1 = curTrend;
+    if (curTrend === 1 && toDown) curTrend = -1;
+    else if (curTrend === -1 && toUp) curTrend = 1;
+    trend[i] = curTrend;
+
+    // Record swing points on trend change
+    if (curTrend !== prevTrend) {
+      if (curTrend === 1) {
+        // Find lowest low since last trend change
+        let minVal = Infinity, minIdx = i;
+        for (let j = Math.max(0, i - zigzagLen * 2); j <= i; j++) {
+          if (l[j] < minVal) { minVal = l[j]; minIdx = j; }
+        }
+        lowPoints.push({ price: minVal, index: minIdx });
+      } else {
+        let maxVal = -Infinity, maxIdx = i;
+        for (let j = Math.max(0, i - zigzagLen * 2); j <= i; j++) {
+          if (h[j] > maxVal) { maxVal = h[j]; maxIdx = j; }
+        }
+        highPoints.push({ price: maxVal, index: maxIdx });
+      }
+
+      // Check for MSB (market structure break)
+      if (highPoints.length >= 2 && lowPoints.length >= 1) {
+        const h0 = highPoints[highPoints.length - 1];
+        const h1 = highPoints.length >= 2 ? highPoints[highPoints.length - 2] : null;
+        const l0 = lowPoints[lowPoints.length - 1];
+        const l1 = lowPoints.length >= 2 ? lowPoints[lowPoints.length - 2] : null;
+
+        const prevMarket: 1 | -1 = curMarket;
+
+        // Bullish MSB: new high breaks previous high with fib confirmation
+        if (h1 && l0 && curMarket === -1 && h0.price > h1.price &&
+            h0.price > h1.price + Math.abs(h1.price - l0.price) * fibFactor) {
+          curMarket = 1;
+        }
+        // Bearish MSB: new low breaks previous low
+        if (l1 && h0 && curMarket === 1 && l0.price < l1.price &&
+            l0.price < l1.price - Math.abs(h0.price - l1.price) * fibFactor) {
+          curMarket = -1;
+        }
+
+        if (curMarket !== prevMarket) {
+          msbSignals.push({
+            index: i,
+            bias: curMarket === 1 ? "bullish" : "bearish",
+            level: curMarket === 1 ? (h1?.price ?? h0.price) : (l1?.price ?? l0.price),
+          });
+
+          // Generate order block
+          if (curMarket === 1 && h1) {
+            // Bullish OB: last bearish candle between h1 and l0
+            for (let j = h1.index; j <= l0.index; j++) {
+              if (o[j] > c[j]) {
+                orderBlocks.push({ startIndex: j, high: h[j], low: l[j], type: "Bu-OB", broken: false });
+                break;
+              }
+            }
+          } else if (curMarket === -1 && l1) {
+            // Bearish OB: last bullish candle between l1 and h0
+            for (let j = l1.index; j <= h0.index; j++) {
+              if (o[j] < c[j]) {
+                orderBlocks.push({ startIndex: j, high: h[j], low: l[j], type: "Be-OB", broken: false });
+                break;
+              }
+            }
+          }
+
+          signal[i] = curMarket === 1 ? "BUY" : "SELL";
+        }
+      }
+    }
+
+    market[i] = curMarket;
+  }
+
+  // Check OB mitigation
+  for (const ob of orderBlocks) {
+    for (let i = ob.startIndex + 1; i < len; i++) {
+      if (ob.type.startsWith("Bu") && c[i] < ob.low) { ob.broken = true; break; }
+      if (ob.type.startsWith("Be") && c[i] > ob.high) { ob.broken = true; break; }
+    }
+  }
+
+  return { trend, market, msbSignals, orderBlocks, signal };
+}
+
+// ─── Support and Resistance Levels with Breaks [LuxAlgo] ───────
+// Pivot-based S/R detection with volume-confirmed breakouts.
+
+export interface SupportResistanceResult {
+  resistance: (number | null)[];    // resistance level at each bar
+  support: (number | null)[];       // support level at each bar
+  breakUp: boolean[];               // resistance break with volume
+  breakDown: boolean[];             // support break with volume
+  bullWick: boolean[];              // bull wick break
+  bearWick: boolean[];              // bear wick break
+  signal: ("BUY" | "SELL" | null)[];
+}
+
+export function supportResistance(
+  klines: KlineData[],
+  leftBars = 15,
+  rightBars = 15,
+  volumeThresh = 20,
+): SupportResistanceResult {
+  const h = highs(klines);
+  const l = lows(klines);
+  const c = closes(klines);
+  const o = klines.map(k => +k.open);
+  const v = volumes(klines);
+  const len = klines.length;
+
+  // Pivot detection
+  const pivotHighs: (number | null)[] = new Array(len).fill(null);
+  const pivotLows: (number | null)[] = new Array(len).fill(null);
+
+  for (let i = leftBars; i < len - rightBars; i++) {
+    let isHigh = true, isLow = true;
+    for (let j = 1; j <= leftBars; j++) {
+      if (h[i] <= h[i - j]) isHigh = false;
+      if (l[i] >= l[i - j]) isLow = false;
+    }
+    for (let j = 1; j <= rightBars; j++) {
+      if (h[i] <= h[i + j]) isHigh = false;
+      if (l[i] >= l[i + j]) isLow = false;
+    }
+    if (isHigh) pivotHighs[i] = h[i];
+    if (isLow) pivotLows[i] = l[i];
+  }
+
+  // fixnan — carry forward last non-null pivot, shifted by 1
+  const resistance: (number | null)[] = new Array(len).fill(null);
+  const support: (number | null)[] = new Array(len).fill(null);
+  let lastPivotHigh: number | null = null;
+  let lastPivotLow: number | null = null;
+
+  for (let i = 0; i < len; i++) {
+    if (pivotHighs[i] !== null) lastPivotHigh = pivotHighs[i];
+    if (pivotLows[i] !== null) lastPivotLow = pivotLows[i];
+    resistance[i] = lastPivotHigh;
+    support[i] = lastPivotLow;
+  }
+
+  // Volume oscillator: 100 * (EMA5 - EMA10) / EMA10
+  const volShort = ema(v, 5);
+  const volLong = ema(v, 10);
+  const volOsc: (number | null)[] = volShort.map((s, i) => {
+    const lg = volLong[i];
+    return s !== null && lg !== null && lg !== 0 ? 100 * (s - lg) / lg : null;
+  });
+
+  const breakUp: boolean[] = new Array(len).fill(false);
+  const breakDown: boolean[] = new Array(len).fill(false);
+  const bullWick: boolean[] = new Array(len).fill(false);
+  const bearWick: boolean[] = new Array(len).fill(false);
+  const signal: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
+
+  for (let i = 1; i < len; i++) {
+    const res = resistance[i];
+    const sup = support[i];
+    const osc = volOsc[i] ?? 0;
+
+    // Break down (support break)
+    if (sup !== null && c[i - 1] >= sup && c[i] < sup) {
+      const isBearWick = (o[i] - c[i]) < (h[i] - o[i]);
+      if (isBearWick) {
+        bearWick[i] = true;
+      }
+      if (!isBearWick && osc > volumeThresh) {
+        breakDown[i] = true;
+        signal[i] = "SELL";
+      }
+    }
+
+    // Break up (resistance break)
+    if (res !== null && c[i - 1] <= res && c[i] > res) {
+      const isBullWick = (o[i] - l[i]) > (c[i] - o[i]);
+      if (isBullWick) {
+        bullWick[i] = true;
+      }
+      if (!isBullWick && osc > volumeThresh) {
+        breakUp[i] = true;
+        signal[i] = "BUY";
+      }
+    }
+  }
+
+  return { resistance, support, breakUp, breakDown, bullWick, bearWick, signal };
+}
+
+// ─── Trendlines with Breaks [LuxAlgo] ──────────────────────────
+// Pivot-based dynamic trendlines with slope from ATR/Stdev.
+
+export interface TrendlinesResult {
+  upper: (number | null)[];       // down-trendline (resistance)
+  lower: (number | null)[];       // up-trendline (support)
+  breakUp: boolean[];             // price breaks above upper trendline
+  breakDown: boolean[];           // price breaks below lower trendline
+  signal: ("BUY" | "SELL" | null)[];
+}
+
+export function trendlinesWithBreaks(
+  klines: KlineData[],
+  length = 14,
+  mult = 1.0,
+  calcMethod: "Atr" | "Stdev" = "Atr",
+): TrendlinesResult {
+  const h = highs(klines);
+  const l = lows(klines);
+  const c = closes(klines);
+  const len = klines.length;
+
+  // Pivot detection
+  const pivotHighs: (number | null)[] = new Array(len).fill(null);
+  const pivotLows: (number | null)[] = new Array(len).fill(null);
+
+  for (let i = length; i < len - length; i++) {
+    let isHigh = true, isLow = true;
+    for (let j = 1; j <= length; j++) {
+      if (h[i] <= h[i - j] || h[i] <= h[i + j]) isHigh = false;
+      if (l[i] >= l[i - j] || l[i] >= l[i + j]) isLow = false;
+    }
+    if (isHigh) pivotHighs[i] = h[i];
+    if (isLow) pivotLows[i] = l[i];
+  }
+
+  // Slope calculation
+  const atrArr = atr(klines, length);
+  const stdevArr = stdev(c, length);
+
+  function getSlope(i: number): number {
+    if (calcMethod === "Stdev") {
+      return ((stdevArr[i] ?? 0) / length) * mult;
+    }
+    return ((atrArr[i] ?? 0) / length) * mult;
+  }
+
+  // Calculate trendlines
+  const upper: (number | null)[] = new Array(len).fill(null);
+  const lower: (number | null)[] = new Array(len).fill(null);
+  const breakUpArr: boolean[] = new Array(len).fill(false);
+  const breakDownArr: boolean[] = new Array(len).fill(false);
+  const signal: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
+
+  let curUpper = 0;
+  let curLower = 0;
+  let slopePh = 0;
+  let slopePl = 0;
+  let upos = 0;
+  let dnos = 0;
+
+  for (let i = 0; i < len; i++) {
+    const slope = getSlope(i);
+
+    if (pivotHighs[i] !== null) {
+      curUpper = pivotHighs[i]!;
+      slopePh = slope;
+      upos = 0;
+    } else {
+      curUpper = curUpper - slopePh;
+    }
+
+    if (pivotLows[i] !== null) {
+      curLower = pivotLows[i]!;
+      slopePl = slope;
+      dnos = 0;
+    } else {
+      curLower = curLower + slopePl;
+    }
+
+    upper[i] = curUpper;
+    lower[i] = curLower;
+
+    // Break detection
+    const prevUpos = upos;
+    const prevDnos = dnos;
+
+    if (pivotHighs[i] !== null) {
+      upos = 0;
+    } else if (c[i] > curUpper) {
+      upos = 1;
+    }
+
+    if (pivotLows[i] !== null) {
+      dnos = 0;
+    } else if (c[i] < curLower) {
+      dnos = 1;
+    }
+
+    if (upos > prevUpos) {
+      breakUpArr[i] = true;
+      signal[i] = "BUY";
+    }
+    if (dnos > prevDnos) {
+      breakDownArr[i] = true;
+      signal[i] = "SELL";
+    }
+  }
+
+  return { upper, lower, breakUp: breakUpArr, breakDown: breakDownArr, signal };
+}
+
+// ─── UT Bot Alerts ─────────────────────────────────────────────
+// ATR trailing stop based trend detection.
+// Buy when price crosses above trailing stop, Sell when below.
+
+export interface UTBotResult {
+  trailingStop: (number | null)[];
+  pos: (1 | -1 | 0)[];             // 1=long, -1=short, 0=neutral
+  signal: ("BUY" | "SELL" | null)[];
+}
+
+export function utBot(
+  klines: KlineData[],
+  keyValue = 1,
+  atrPeriod = 10,
+): UTBotResult {
+  const c = closes(klines);
+  const len = klines.length;
+
+  const atrArr = atr(klines, atrPeriod);
+
+  const trailingStop: (number | null)[] = new Array(len).fill(null);
+  const pos: (1 | -1 | 0)[] = new Array(len).fill(0);
+  const signal: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
+
+  let prevStop = 0;
+  let prevPos = 0;
+
+  for (let i = 0; i < len; i++) {
+    const xATR = atrArr[i];
+    if (xATR === null) continue;
+
+    const nLoss = keyValue * xATR;
+    const src = c[i];
+    const prevSrc = i > 0 ? c[i - 1] : src;
+
+    // ATR Trailing Stop
+    let stop: number;
+    if (src > prevStop && prevSrc > prevStop) {
+      stop = Math.max(prevStop, src - nLoss);
+    } else if (src < prevStop && prevSrc < prevStop) {
+      stop = Math.min(prevStop, src + nLoss);
+    } else if (src > prevStop) {
+      stop = src - nLoss;
+    } else {
+      stop = src + nLoss;
+    }
+
+    trailingStop[i] = stop;
+
+    // Position
+    let curPos: 1 | -1 | 0 = 0;
+    if (prevSrc < prevStop && src > prevStop) curPos = 1;
+    else if (prevSrc > prevStop && src < prevStop) curPos = -1;
+    else curPos = prevPos as (1 | -1 | 0);
+
+    pos[i] = curPos;
+
+    // Signal: crossover/crossunder with EMA(src,1) ≈ src
+    const above = src > stop && prevSrc <= prevStop;
+    const below = src < stop && prevSrc >= prevStop;
+    const buy = src > stop && above;
+    const sell = src < stop && below;
+
+    if (buy) signal[i] = "BUY";
+    else if (sell) signal[i] = "SELL";
+
+    prevStop = stop;
+    prevPos = curPos;
+  }
+
+  return { trailingStop, pos, signal };
+}
+
 // ─── Compute all indicators for klines ─────────────────────────
 export interface AllIndicators {
   rsi: (number | null)[];
@@ -1084,6 +1512,10 @@ export interface AllIndicators {
   cmMacd: CMMAcDResult;
   supertrend: SupertrendResult;
   squeezeMomentum: SqueezeMomentumResult;
+  msbOb: MSBResult;
+  supportResistance: SupportResistanceResult;
+  trendlines: TrendlinesResult;
+  utBot: UTBotResult;
 }
 
 export function computeAll(klines: KlineData[], overrides?: {
@@ -1099,6 +1531,16 @@ export function computeAll(klines: KlineData[], overrides?: {
   sqzMomBBMult?: number;
   sqzMomKCLength?: number;
   sqzMomKCMult?: number;
+  msbZigzagLen?: number;
+  msbFibFactor?: number;
+  srLeftBars?: number;
+  srRightBars?: number;
+  srVolumeThresh?: number;
+  trendLength?: number;
+  trendMult?: number;
+  trendCalcMethod?: "Atr" | "Stdev";
+  utBotKey?: number;
+  utBotAtrPeriod?: number;
 }): AllIndicators {
   const c = closes(klines);
   return {
@@ -1111,5 +1553,9 @@ export function computeAll(klines: KlineData[], overrides?: {
     cmMacd: cmMacdUltMTF(c, overrides?.cmMacdFast ?? 12, overrides?.cmMacdSlow ?? 26, overrides?.cmMacdSignal ?? 9),
     supertrend: supertrend(klines, overrides?.supertrendPeriod ?? 10, overrides?.supertrendMultiplier ?? 3.0),
     squeezeMomentum: squeezeMomentum(klines, overrides?.sqzMomBBLength ?? 20, overrides?.sqzMomBBMult ?? 2.0, overrides?.sqzMomKCLength ?? 20, overrides?.sqzMomKCMult ?? 1.5),
+    msbOb: msbOrderBlock(klines, overrides?.msbZigzagLen ?? 9, overrides?.msbFibFactor ?? 0.33),
+    supportResistance: supportResistance(klines, overrides?.srLeftBars ?? 15, overrides?.srRightBars ?? 15, overrides?.srVolumeThresh ?? 20),
+    trendlines: trendlinesWithBreaks(klines, overrides?.trendLength ?? 14, overrides?.trendMult ?? 1.0, overrides?.trendCalcMethod ?? "Atr"),
+    utBot: utBot(klines, overrides?.utBotKey ?? 1, overrides?.utBotAtrPeriod ?? 10),
   };
 }

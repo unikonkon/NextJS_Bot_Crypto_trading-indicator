@@ -43,7 +43,11 @@ export type StrategyId =
   | "smc"
   | "cm_macd"
   | "supertrend"
-  | "squeeze_momentum";
+  | "squeeze_momentum"
+  | "msb_ob"
+  | "support_resistance"
+  | "trendlines"
+  | "ut_bot";
 
 export interface StrategyConfig {
   id: StrategyId;
@@ -72,6 +76,12 @@ export const STRATEGIES: StrategyConfig[] = [
     params: { swingSize: 50, internalSize: 5 },
   },
   {
+    id: "squeeze_momentum",
+    name: "Squeeze Momentum [LazyBear]",
+    description: "BB Squeeze + Momentum — Buy เมื่อ momentum ข้ามเหนือ 0, Sell เมื่อข้ามใต้ 0",
+    params: { bbLength: 20, bbMult: 2.0, kcLength: 20, kcMult: 1.5 },
+  },
+  {
     id: "cm_macd",
     name: "CM MacD Ultimate MTF",
     description: "Enhanced MACD 4-Color — Buy เมื่อ MACD ตัดขึ้น Signal, Sell เมื่อ MACD ตัดลง Signal",
@@ -84,10 +94,28 @@ export const STRATEGIES: StrategyConfig[] = [
     params: { atrPeriod: 10, multiplier: 3.0 },
   },
   {
-    id: "squeeze_momentum",
-    name: "Squeeze Momentum [LazyBear]",
-    description: "BB Squeeze + Momentum — Buy เมื่อ momentum ข้ามเหนือ 0, Sell เมื่อข้ามใต้ 0",
-    params: { bbLength: 20, bbMult: 2.0, kcLength: 20, kcMult: 1.5 },
+    id: "msb_ob",
+    name: "Market Structure Break & OB",
+    description: "ZigZag MSB — Buy เมื่อ Bullish MSB, Sell เมื่อ Bearish MSB พร้อม Order Block",
+    params: { zigzagLen: 9, fibFactor: 0.33 },
+  },
+  {
+    id: "support_resistance",
+    name: "Support & Resistance Breaks",
+    description: "Pivot S/R + Volume — Buy เมื่อทะลุ Resistance, Sell เมื่อหลุด Support พร้อม Volume",
+    params: { leftBars: 15, rightBars: 15, volumeThresh: 20 },
+  },
+  {
+    id: "trendlines",
+    name: "Trendlines with Breaks [LuxAlgo]",
+    description: "Dynamic trendlines — Buy เมื่อทะลุเส้นแนวต้าน, Sell เมื่อหลุดเส้นแนวรับ",
+    params: { trendLength: 14, trendMult: 1.0 },
+  },
+  {
+    id: "ut_bot",
+    name: "UT Bot Alerts",
+    description: "ATR Trailing Stop — Buy เมื่อราคาข้ามขึ้นเหนือ trailing stop, Sell เมื่อข้ามลง",
+    params: { keyValue: 1, utAtrPeriod: 10 },
   },
 ];
 
@@ -146,6 +174,38 @@ function squeezeMomentumStrategy(_k: KlineData[], ind: AllIndicators): SignalAct
   });
 }
 
+function msbObStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.msbOb.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
+function supportResistanceStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.supportResistance.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
+function trendlinesStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.trendlines.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
+function utBotStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.utBot.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
   cdc_actionzone: cdcActionZoneStrategy,
@@ -153,6 +213,10 @@ const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   cm_macd: cmMacdStrategy,
   supertrend: supertrendStrategy,
   squeeze_momentum: squeezeMomentumStrategy,
+  msb_ob: msbObStrategy,
+  support_resistance: supportResistanceStrategy,
+  trendlines: trendlinesStrategy,
+  ut_bot: utBotStrategy,
 };
 
 // ─── Backtest Engine ───────────────────────────────────────────
@@ -175,6 +239,15 @@ export function runBacktest(
     sqzMomBBMult: strategyId === "squeeze_momentum" ? (params.bbMult ?? 2.0) : undefined,
     sqzMomKCLength: strategyId === "squeeze_momentum" ? (params.kcLength ?? 20) : undefined,
     sqzMomKCMult: strategyId === "squeeze_momentum" ? (params.kcMult ?? 1.5) : undefined,
+    msbZigzagLen: strategyId === "msb_ob" ? (params.zigzagLen ?? 9) : undefined,
+    msbFibFactor: strategyId === "msb_ob" ? (params.fibFactor ?? 0.33) : undefined,
+    srLeftBars: strategyId === "support_resistance" ? (params.leftBars ?? 15) : undefined,
+    srRightBars: strategyId === "support_resistance" ? (params.rightBars ?? 15) : undefined,
+    srVolumeThresh: strategyId === "support_resistance" ? (params.volumeThresh ?? 20) : undefined,
+    trendLength: strategyId === "trendlines" ? (params.trendLength ?? 14) : undefined,
+    trendMult: strategyId === "trendlines" ? (params.trendMult ?? 1.0) : undefined,
+    utBotKey: strategyId === "ut_bot" ? (params.keyValue ?? 1) : undefined,
+    utBotAtrPeriod: strategyId === "ut_bot" ? (params.utAtrPeriod ?? 10) : undefined,
   });
   const signals = STRATEGY_FNS[strategyId](klines, indicators, params);
 
