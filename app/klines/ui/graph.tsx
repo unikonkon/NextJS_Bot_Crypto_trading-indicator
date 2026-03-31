@@ -46,11 +46,10 @@ function OverlayToggle({ label, color, secondColor, active, onToggle }: {
   return (
     <button
       onClick={onToggle}
-      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium transition-all cursor-pointer select-none ${
-        active
-          ? "bg-foreground/10 text-foreground"
-          : "text-muted-foreground/40 hover:text-muted-foreground/70"
-      }`}
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium transition-all cursor-pointer select-none ${active
+        ? "bg-foreground/10 text-foreground"
+        : "text-muted-foreground/40 hover:text-muted-foreground/70"
+        }`}
     >
       <span
         className="inline-block w-2 h-0.5 rounded-full"
@@ -136,16 +135,16 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
 
     // Enable matching overlay
     switch (strategyId) {
-      case "rsi":             setShowRsiToggle(true); break;
-      case "cdc_actionzone":  setShowCdcEma(true); break;
-      case "smc":             setShowSmcOb(true); break;
-      case "cm_macd":         setShowMacdToggle(true); break;
-      case "supertrend":      setShowSupertrendLine(true); break;
+      case "rsi": setShowRsiToggle(true); break;
+      case "cdc_actionzone": setShowCdcEma(true); break;
+      case "smc": setShowSmcOb(true); break;
+      case "cm_macd": setShowMacdToggle(true); break;
+      case "supertrend": setShowSupertrendLine(true); break;
       case "squeeze_momentum": setShowSqzToggle(true); break;
-      case "msb_ob":          setShowMsbOb(true); break;
+      case "msb_ob": setShowMsbOb(true); break;
       case "support_resistance": setShowSR(true); break;
-      case "trendlines":      setShowTrendlines(true); break;
-      case "ut_bot":          setShowUtBot(true); break;
+      case "trendlines": setShowTrendlines(true); break;
+      case "ut_bot": setShowUtBot(true); break;
     }
   }, [strategyId]);
 
@@ -336,26 +335,127 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
         }).setData(dnData as any);
       }
 
-      // SMC: Active Order Block levels
+      // SMC: Market Structure + Order Blocks
       if (showSmcOb) {
-        const activeOBs = indicators.smc.internalOrderBlocks.filter((ob) => !ob.mitigated);
+        const smc = indicators.smc;
+
+        // 1. BOS / CHoCH structure lines (internal + swing)
+        const allStructures = [
+          ...smc.internalStructures,
+          ...smc.swingStructures,
+        ];
+
+        for (const s of allStructures) {
+          if (s.pivotIndex < 0 || s.index < 0 || s.index >= klines.length || s.pivotIndex >= klines.length) continue;
+          const t1 = times[s.pivotIndex];
+          const t2 = times[s.index];
+          if (!t1 || !t2 || t1 === t2) continue;
+
+          const isBos = s.type === "BOS";
+          const isBull = s.bias === "bullish";
+          const color = isBull ? "#10b981" : "#ef4444";
+          const lineStyle = isBos ? 0 : 2; // solid for BOS, dashed for CHoCH
+
+          // Horizontal line at the break level from pivot to break bar
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: isBos ? 1 : 2,
+            lineStyle,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: t1, value: s.level },
+            { time: t2, value: s.level },
+          ]);
+        }
+
+        // 2. BOS/CHoCH markers on the chart
+        const smcMarkers: SeriesMarker<UTCTimestamp>[] = [];
+        for (const s of allStructures) {
+          if (s.index < 0 || s.index >= klines.length) continue;
+          smcMarkers.push({
+            time: times[s.index],
+            position: s.bias === "bullish" ? "belowBar" : "aboveBar",
+            color: s.bias === "bullish" ? "#10b981" : "#ef4444",
+            shape: s.bias === "bullish" ? "arrowUp" : "arrowDown",
+            text: s.type,
+          });
+        }
+        if (smcMarkers.length > 0 && !btResult) {
+          // Deduplicate by time (keep last)
+          const seen = new Map<number, SeriesMarker<UTCTimestamp>>();
+          for (const m of smcMarkers) seen.set(m.time as number, m);
+          const deduped = Array.from(seen.values()).sort((a, b) => (a.time as number) - (b.time as number));
+          createSeriesMarkers(candleSeries, deduped);
+        }
+
+        // 3. Active Order Block zones (top + bottom lines)
+        const activeOBs = smc.internalOrderBlocks.filter((ob) => !ob.mitigated);
         for (const ob of activeOBs.slice(-10)) {
-          const midPrice = (ob.high + ob.low) / 2;
           const startTime = times[ob.startIndex];
           const endTime = times[klines.length - 1];
-          if (startTime && endTime) {
-            chart.addSeries(LineSeries, {
-              color: ob.bias === "bullish" ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)",
-              lineWidth: 1,
-              lineStyle: 2,
-              priceLineVisible: false,
-              lastValueVisible: false,
-              crosshairMarkerVisible: false,
-            }).setData([
-              { time: startTime, value: midPrice },
-              { time: endTime, value: midPrice },
-            ]);
-          }
+          if (!startTime || !endTime || startTime === endTime) continue;
+
+          const color = ob.bias === "bullish" ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)";
+
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 1,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: startTime, value: ob.high },
+            { time: endTime, value: ob.high },
+          ]);
+
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 1,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: startTime, value: ob.low },
+            { time: endTime, value: ob.low },
+          ]);
+        }
+
+        // 4. Swing Order Block zones
+        const activeSwingOBs = smc.swingOrderBlocks.filter((ob) => !ob.mitigated);
+        for (const ob of activeSwingOBs.slice(-5)) {
+          const startTime = times[ob.startIndex];
+          const endTime = times[klines.length - 1];
+          if (!startTime || !endTime || startTime === endTime) continue;
+
+          const color = ob.bias === "bullish" ? "rgba(49,121,245,0.3)" : "rgba(178,40,51,0.3)";
+
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 2,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: startTime, value: ob.high },
+            { time: endTime, value: ob.high },
+          ]);
+
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 2,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: startTime, value: ob.low },
+            { time: endTime, value: ob.low },
+          ]);
         }
       }
 
@@ -453,27 +553,115 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
         }).setData(dnData as any);
       }
 
-      // MSB Order Blocks
+      // MSB Order Blocks — full visualization
       if (showMsbOb) {
         const msb = indicators.msbOb;
-        const activeOBsMsb = msb.orderBlocks.filter(ob => !ob.broken);
-        for (const ob of activeOBsMsb.slice(-10)) {
-          const midPrice = (ob.high + ob.low) / 2;
-          const startTime = times[ob.startIndex];
-          const endTime = times[klines.length - 1];
-          if (startTime && endTime) {
+
+        // 1. ZigZag lines connecting swing points (deduplicate by time)
+        if (msb.swingPoints.length >= 2) {
+          const sorted = msb.swingPoints
+            .filter(sp => sp.index >= 0 && sp.index < klines.length)
+            .sort((a, b) => a.index - b.index);
+
+          // Deduplicate: keep only one entry per index (last one wins)
+          const deduped: typeof sorted = [];
+          for (const sp of sorted) {
+            if (deduped.length > 0 && deduped[deduped.length - 1].index === sp.index) {
+              deduped[deduped.length - 1] = sp;
+            } else {
+              deduped.push(sp);
+            }
+          }
+
+          const zigzagData = deduped.map(sp => ({ time: times[sp.index], value: sp.price }));
+
+          if (zigzagData.length >= 2) {
             chart.addSeries(LineSeries, {
-              color: ob.type.startsWith("Bu") ? "rgba(16,185,129,0.5)" : "rgba(239,68,68,0.5)",
+              color: isDark ? "rgba(148,163,184,0.5)" : "rgba(100,116,139,0.5)",
               lineWidth: 1,
-              lineStyle: 2,
+              priceLineVisible: false,
+              lastValueVisible: false,
+              crosshairMarkerVisible: false,
+            }).setData(zigzagData);
+          }
+        }
+
+        // 2. MSB level lines (horizontal line at break level)
+        for (const sig of msb.msbSignals) {
+          if (sig.index < 0 || sig.index >= klines.length) continue;
+          const startTime = times[sig.index];
+          // Extend MSB line for ~30 bars or to end
+          const endIdx = Math.min(sig.index + 30, klines.length - 1);
+          if (endIdx <= sig.index) continue;
+          const endTime = times[endIdx];
+          if (startTime && endTime && startTime !== endTime) {
+            chart.addSeries(LineSeries, {
+              color: sig.bias === "bullish" ? "#10b981" : "#ef4444",
+              lineWidth: 2,
+              lineStyle: 0,
               priceLineVisible: false,
               lastValueVisible: false,
               crosshairMarkerVisible: false,
             }).setData([
-              { time: startTime, value: midPrice },
-              { time: endTime, value: midPrice },
+              { time: startTime, value: sig.level },
+              { time: endTime, value: sig.level },
             ]);
           }
+        }
+
+        // 3. MSB markers (arrows at break points)
+        const msbMarkers: SeriesMarker<UTCTimestamp>[] = [];
+        for (const sig of msb.msbSignals) {
+          if (sig.index < 0 || sig.index >= klines.length) continue;
+          msbMarkers.push({
+            time: times[sig.index],
+            position: sig.bias === "bullish" ? "belowBar" : "aboveBar",
+            color: sig.bias === "bullish" ? "#10b981" : "#ef4444",
+            shape: sig.bias === "bullish" ? "arrowUp" : "arrowDown",
+            text: "MSB",
+          });
+        }
+        if (msbMarkers.length > 0 && !btResult) {
+          msbMarkers.sort((a, b) => (a.time as number) - (b.time as number));
+          createSeriesMarkers(candleSeries, msbMarkers);
+        }
+
+        // 4. Order Block zones (high & low lines for each OB)
+        const activeOBsMsb = msb.orderBlocks.filter(ob => !ob.broken);
+        for (const ob of activeOBsMsb.slice(-10)) {
+          if (ob.startIndex < 0 || ob.startIndex >= klines.length) continue;
+          const startTime = times[ob.startIndex];
+          const endTime = times[klines.length - 1];
+          if (!startTime || !endTime || startTime === endTime) continue;
+
+          const isBull = ob.type.startsWith("Bu");
+          const color = isBull ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)";
+
+          // Top line of OB zone
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 1,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: startTime, value: ob.high },
+            { time: endTime, value: ob.high },
+          ]);
+
+          // Bottom line of OB zone
+          chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 1,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }).setData([
+            { time: startTime, value: ob.low },
+            { time: endTime, value: ob.low },
+          ]);
         }
       }
     }
@@ -872,7 +1060,7 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
           <OverlayToggle label="VWAP" color="#a855f7" active={showVwap} onToggle={() => setShowVwap(v => !v)} />
           <OverlayToggle label="CDC EMA" color="#3b82f6" secondColor="#f59e0b" active={showCdcEma} onToggle={() => setShowCdcEma(v => !v)} />
           <OverlayToggle label="Supertrend" color="#10b981" secondColor="#ef4444" active={showSupertrendLine} onToggle={() => setShowSupertrendLine(v => !v)} />
-          <OverlayToggle label="SMC OB" color="#6b7280" active={showSmcOb} onToggle={() => setShowSmcOb(v => !v)} />
+          <OverlayToggle label="SMC" color="#10b981" secondColor="#ef4444" active={showSmcOb} onToggle={() => setShowSmcOb(v => !v)} />
           <OverlayToggle label="S/R" color="#ef4444" secondColor="#3b82f6" active={showSR} onToggle={() => setShowSR(v => !v)} />
           <OverlayToggle label="Trendlines" color="#14b8a6" secondColor="#ef4444" active={showTrendlines} onToggle={() => setShowTrendlines(v => !v)} />
           <OverlayToggle label="UT Bot" color="#10b981" secondColor="#ef4444" active={showUtBot} onToggle={() => setShowUtBot(v => !v)} />

@@ -1085,11 +1085,18 @@ export interface MSBOrderBlock {
   broken: boolean;
 }
 
+export interface MSBSwingPoint {
+  index: number;
+  price: number;
+  type: "high" | "low";
+}
+
 export interface MSBResult {
   trend: (1 | -1 | null)[];          // zigzag trend
   market: (1 | -1 | null)[];         // market structure (1=bull, -1=bear)
   msbSignals: { index: number; bias: "bullish" | "bearish"; level: number }[];
   orderBlocks: MSBOrderBlock[];
+  swingPoints: MSBSwingPoint[];       // zigzag swing points for drawing
   signal: ("BUY" | "SELL" | null)[];
 }
 
@@ -1113,6 +1120,7 @@ export function msbOrderBlock(
   const signal: ("BUY" | "SELL" | null)[] = new Array(len).fill(null);
   const msbSignals: MSBResult["msbSignals"] = [];
   const orderBlocks: MSBOrderBlock[] = [];
+  const swingPoints: MSBSwingPoint[] = [];
 
   // Track swing points
   const highPoints: { price: number; index: number }[] = [];
@@ -1139,12 +1147,14 @@ export function msbOrderBlock(
           if (l[j] < minVal) { minVal = l[j]; minIdx = j; }
         }
         lowPoints.push({ price: minVal, index: minIdx });
+        swingPoints.push({ index: minIdx, price: minVal, type: "low" });
       } else {
         let maxVal = -Infinity, maxIdx = i;
         for (let j = Math.max(0, i - zigzagLen * 2); j <= i; j++) {
           if (h[j] > maxVal) { maxVal = h[j]; maxIdx = j; }
         }
         highPoints.push({ price: maxVal, index: maxIdx });
+        swingPoints.push({ index: maxIdx, price: maxVal, type: "high" });
       }
 
       // Check for MSB (market structure break)
@@ -1209,7 +1219,7 @@ export function msbOrderBlock(
     }
   }
 
-  return { trend, market, msbSignals, orderBlocks, signal };
+  return { trend, market, msbSignals, orderBlocks, swingPoints, signal };
 }
 
 // ─── Support and Resistance Levels with Breaks [LuxAlgo] ───────

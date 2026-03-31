@@ -472,12 +472,14 @@ export default function KlinesPage() {
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field label="ค่าธรรมเนียม (%)">
-                      <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
-                    </Field>
-                    <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
-                      {btRunning ? "กำลังรัน..." : "รัน Backtest"}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-3 mt-3">
+                      <Field label="ค่าธรรมเนียม (%)">
+                        <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
+                      </Field>
+                      <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
+                        {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                      </Button>
+                    </div>
                   </div>
                   {btResult && (
                     <span className={`text-lg font-bold tabular-nums ${btResult.totalPnlPct >= 0 ? "text-emerald-500" : "text-red-500"}`}>
@@ -595,26 +597,34 @@ export default function KlinesPage() {
                 {/* SMC explanation */}
                 {strategyId === "smc" && (
                   <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
-                    <p className="text-[11px] font-medium text-foreground/90">Smart Money Concepts (SMC) คืออะไร?</p>
+                    <p className="text-[11px] font-medium text-foreground/90">Smart Money Concepts (SMC) [LuxAlgo] คืออะไร?</p>
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                       SMC เป็นแนวคิดการวิเคราะห์โครงสร้างตลาด (Market Structure) ตามทฤษฎี ICT/Smart Money
                       โดยตรวจจับจุดกลับตัวของราคา (Pivot Points) แล้ววิเคราะห์ว่าราคาทะลุจุดสำคัญอย่างไร
                     </p>
 
                     <div className="space-y-1.5 text-[10px]">
-                      <p className="font-medium text-foreground/80">โครงสร้างตลาด (Market Structure):</p>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        <span className="text-emerald-500">BOS (Break of Structure) = ราคาทะลุ pivot ตามเทรนด์เดิม → ยืนยันเทรนด์</span>
-                        <span className="text-amber-500">CHoCH (Change of Character) = ราคาทะลุ pivot สวนเทรนด์ → สัญญาณกลับตัว</span>
+                      <p className="font-medium text-foreground/80">โครงสร้างตลาด (Market Structure) — แสดงบนกราฟ:</p>
+                      <div className="space-y-1">
+                        <div className="flex items-start gap-2">
+                          <span className="text-emerald-500 font-medium whitespace-nowrap">BOS (เส้นทึบ เขียว/แดง + ลูกศร)</span>
+                          <span className="text-muted-foreground">Break of Structure — ราคาทะลุ pivot ตามเทรนด์เดิม → ยืนยันว่าเทรนด์ยังคงอยู่</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-amber-500 font-medium whitespace-nowrap">CHoCH (เส้นประ เขียว/แดง + ลูกศร)</span>
+                          <span className="text-muted-foreground">Change of Character — ราคาทะลุ pivot สวนเทรนด์ → สัญญาณกลับตัว (สำคัญมาก!)</span>
+                        </div>
                       </div>
                     </div>
 
                     <div className="space-y-1.5 text-[10px]">
-                      <p className="font-medium text-foreground/80">องค์ประกอบอื่น:</p>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                        <span>Order Block (OB) = แท่งเทียนสุดท้ายก่อนราคาพุ่ง/ดิ่ง → โซนแนวรับ/ต้านที่แข็งแกร่ง</span>
-                        <span>Fair Value Gap (FVG) = ช่องว่างราคาระหว่าง 3 แท่งเทียน → ราคามักย้อนกลับมาเติมช่องว่าง</span>
-                        <span>Premium Zone = ราคาอยู่สูงกว่าจุดสมดุล → เหมาะขาย | Discount Zone = ราคาอยู่ต่ำกว่า → เหมาะซื้อ</span>
+                      <p className="font-medium text-foreground/80">องค์ประกอบอื่นบนกราฟ:</p>
+                      <div className="space-y-0.5 text-muted-foreground">
+                        <p><span className="text-emerald-500/60">โซนเขียว (เส้นคู่บน-ล่าง)</span> = Bullish Internal OB — แนวรับจากแท่งเทียนขาลงสุดท้ายก่อน break ขึ้น</p>
+                        <p><span className="text-red-500/60">โซนแดง (เส้นคู่บน-ล่าง)</span> = Bearish Internal OB — แนวต้านจากแท่งเทียนขาขึ้นสุดท้ายก่อน break ลง</p>
+                        <p><span className="text-blue-500/60">โซนน้ำเงิน (เส้นหนา)</span> = Swing OB — Order Block ระดับ Swing (แนวรับ/ต้านหลัก)</p>
+                        <p>Fair Value Gap (FVG) = ช่องว่างราคาระหว่าง 3 แท่งเทียน → ราคามักย้อนกลับมาเติม</p>
+                        <p>Premium/Discount Zone = ราคาสูงกว่าจุดสมดุล → เหมาะขาย | ต่ำกว่า → เหมาะซื้อ</p>
                       </div>
                     </div>
 
@@ -918,16 +928,65 @@ export default function KlinesPage() {
                   <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
                     <p className="text-[11px] font-medium text-foreground/90">Market Structure Break &amp; Order Block (MSB-OB) คืออะไร?</p>
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      ใช้ ZigZag ตรวจจับ Swing Points แล้ววิเคราะห์ว่าราคา Break โครงสร้างตลาดเมื่อไหร่ (MSB)
-                      พร้อมระบุ Order Block — แท่งเทียนก่อน break ที่เป็นโซนแนวรับ/ต้านที่แข็งแกร่ง
+                      ใช้ ZigZag ตรวจจับ Swing Points (จุดกลับตัว) แล้ววิเคราะห์ว่าราคา Break โครงสร้างตลาดเมื่อไหร่ (MSB)
+                      เมื่อ Low ใหม่ทำ Lower Low = Bearish MSB, เมื่อ High ใหม่ทำ Higher High = Bullish MSB
+                      พร้อมระบุ Order Block — แท่งเทียนสุดท้ายก่อน break ที่เป็นโซนแนวรับ/ต้าน
                     </p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
-                      <span className="text-emerald-500">BUY → Bullish MSB (โครงสร้างเปลี่ยนเป็นขาขึ้น)</span>
-                      <span className="text-red-500">SELL → Bearish MSB (โครงสร้างเปลี่ยนเป็นขาลง)</span>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">องค์ประกอบบนกราฟ:</p>
+                      <div className="space-y-0.5 text-muted-foreground">
+                        <p><span className="text-slate-400">เส้น ZigZag (สีเทา)</span> — เชื่อม Swing High ↔ Swing Low แสดงโครงสร้างราคา</p>
+                        <p><span className="text-emerald-500">เส้นเขียว + ลูกศร MSB</span> — Bullish MSB ราคาทะลุ High เดิม → โครงสร้างเปลี่ยนเป็นขาขึ้น</p>
+                        <p><span className="text-red-500">เส้นแดง + ลูกศร MSB</span> — Bearish MSB ราคาหลุด Low เดิม → โครงสร้างเปลี่ยนเป็นขาลง</p>
+                        <p><span className="text-emerald-500/70">โซนเขียว (Bu-OB)</span> — Bullish Order Block แนวรับ (แท่งเทียนขาลงสุดท้ายก่อน break ขึ้น)</p>
+                        <p><span className="text-red-500/70">โซนแดง (Be-OB)</span> — Bearish Order Block แนวต้าน (แท่งเทียนขาขึ้นสุดท้ายก่อน break ลง)</p>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      <span className="text-emerald-500/70">Bu-OB</span> = Bullish Order Block (แนวรับ) |{" "}
-                      <span className="text-red-500/70">Be-OB</span> = Bearish Order Block (แนวต้าน)
+
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → Bullish MSB (โครงสร้างเปลี่ยนเป็นขาขึ้น)</span>
+                        <span className="text-red-500">SELL → Bearish MSB (โครงสร้างเปลี่ยนเป็นขาลง)</span>
+                      </div>
+                    </div>
+
+                    <Separator className="my-1.5" />
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">ความหมายของพารามิเตอร์:</p>
+                      <div className="space-y-2">
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-blue-400">ZigZag Length (ค่าปัจจุบัน: {strategyParams.zigzagLen ?? 9})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            จำนวนแท่งเทียนที่ใช้ตรวจจับ Swing Point — กำหนดว่าราคาต้องเป็น Highest/Lowest กี่แท่งถึงนับเป็นจุดกลับตัว
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (3-5) → เจอ Swing Point บ่อย → MSB เกิดถี่ → สัญญาณเยอะแต่อาจมี noise</p>
+                            <p className="text-red-500/80">ค่ามาก (12-20) → เจอ Swing Point น้อย → MSB เกิดยาก → จับเทรนด์ใหญ่ได้ดีกว่า</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 9 (มาตรฐาน), 5 (ไว), 14 (ช้า)</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-purple-400">Fib Factor (ค่าปัจจุบัน: {strategyParams.fibFactor ?? 0.33})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            สัดส่วน Fibonacci ที่ใช้ยืนยัน MSB — ราคาต้อง break เกินระดับนี้ถึงจะนับเป็น MSB จริง
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (0.1-0.2) → ยืนยัน break ง่าย → MSB เกิดบ่อย</p>
+                            <p className="text-red-500/80">ค่ามาก (0.4-0.5) → ต้อง break แรงกว่า → MSB เกิดยาก แต่มีนัยสำคัญมากขึ้น</p>
+                            <p className="text-muted-foreground/70">ค่าทั่วไป: 0.33 (ระดับ Fib 33%)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2 text-[9px] text-amber-500/80">
+                      <p className="font-medium">วิธีใช้:</p>
+                      <p>1. สังเกต ZigZag — เมื่อ High ใหม่สูงกว่า High เก่า = โครงสร้าง Bullish</p>
+                      <p>2. เมื่อเกิด MSB (ลูกศร) → ดูว่าราคากลับมาเข้าโซน Order Block หรือไม่ = จุดเข้าเทรดที่ดี</p>
+                      <p>3. OB ที่ยังไม่ถูก break (ยังแสดงอยู่) = โซนแนวรับ/ต้านที่ยังใช้ได้</p>
                     </div>
                   </div>
                 )}
