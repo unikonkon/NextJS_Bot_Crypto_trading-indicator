@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   createChart,
@@ -35,15 +35,49 @@ function fmtPrice(n: number): string {
   return n.toFixed(6);
 }
 
+// ─── Toggle Button ─────────────────────────────────────────────
+function OverlayToggle({ label, color, secondColor, active, onToggle }: {
+  label: string;
+  color: string;
+  secondColor?: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium transition-all cursor-pointer select-none ${
+        active
+          ? "bg-foreground/10 text-foreground"
+          : "text-muted-foreground/40 hover:text-muted-foreground/70"
+      }`}
+    >
+      <span
+        className="inline-block w-2 h-0.5 rounded-full"
+        style={{ backgroundColor: active ? color : "currentColor" }}
+      />
+      {secondColor && (
+        <span
+          className="inline-block w-2 h-0.5 rounded-full -ml-0.5"
+          style={{ backgroundColor: active ? secondColor : "currentColor" }}
+        />
+      )}
+      {label}
+    </button>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────
 export default function KlineGraph({ klines, indicators, btResult, strategyId }: KlineGraphProps) {
   const mainRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);
   const macdRef = useRef<HTMLDivElement>(null);
+  const sqzRef = useRef<HTMLDivElement>(null);
 
   const chartRef = useRef<IChartApi | null>(null);
   const rsiChartRef = useRef<IChartApi | null>(null);
   const macdChartRef = useRef<IChartApi | null>(null);
+  const sqzChartRef = useRef<IChartApi | null>(null);
 
   // Prevent sync loops
   const syncingRef = useRef(false);
@@ -71,9 +105,26 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
     }));
   }, [klines]);
 
+  // ─── Overlay & sub-chart toggles ────────────────────────────
+  const [showVwap, setShowVwap] = useState(true);
+  const [showCdcEma, setShowCdcEma] = useState(false);
+  const [showSupertrendLine, setShowSupertrendLine] = useState(false);
+  const [showSmcOb, setShowSmcOb] = useState(false);
+  const [showRsiToggle, setShowRsiToggle] = useState(true);
+  const [showMacdToggle, setShowMacdToggle] = useState(true);
+  const [showSqzToggle, setShowSqzToggle] = useState(true);
+
+  // Auto-enable matching overlay when strategy changes
+  useEffect(() => {
+    if (strategyId === "cdc_actionzone") setShowCdcEma(true);
+    if (strategyId === "supertrend") setShowSupertrendLine(true);
+    if (strategyId === "smc") setShowSmcOb(true);
+  }, [strategyId]);
+
   // Determine which sub-panels to show
-  const showRsi = !!indicators && (strategyId === "rsi" || !btResult);
-  const showMacd = !!indicators && (strategyId === "cm_macd" || !btResult);
+  const showRsi = !!indicators && showRsiToggle;
+  const showMacd = !!indicators && showMacdToggle;
+  const showSqz = !!indicators && showSqzToggle;
 
   // ─── Main chart + sub-charts ────────────────────────────────
   useEffect(() => {
@@ -83,9 +134,11 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
     chartRef.current?.remove();
     rsiChartRef.current?.remove();
     macdChartRef.current?.remove();
+    sqzChartRef.current?.remove();
     chartRef.current = null;
     rsiChartRef.current = null;
     macdChartRef.current = null;
+    sqzChartRef.current = null;
 
     const gridColor = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.06)";
     const crossColor = isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)";
@@ -117,7 +170,7 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
       handleScroll: { vertTouchDrag: false },
     };
 
-    const hasSubCharts = (showRsi && rsiRef.current) || (showMacd && macdRef.current);
+    const hasSubCharts = (showRsi && rsiRef.current) || (showMacd && macdRef.current) || (showSqz && sqzRef.current);
 
     // ═══ MAIN CHART (Candlestick + Volume + Overlays) ═══
     const chart = createChart(mainRef.current, {
@@ -152,8 +205,21 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
     if (indicators) {
       const times = klines.map((k) => toUTC(k.openTime));
 
+      // VWAP line
+      if (showVwap) {
+        const vwapData = indicators.vwap.map((v, i) => ({ time: times[i], value: v }));
+        chart.addSeries(LineSeries, {
+          color: "rgba(168,85,247,0.6)",
+          lineWidth: 1,
+          lineStyle: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }).setData(vwapData);
+      }
+
       // CDC ActionZone: Fast & Slow MA + colored candles
-      if (strategyId === "cdc_actionzone") {
+      if (showCdcEma) {
         const fastData = indicators.cdcActionZone.fastMA
           .map((v, i) => (v !== null ? { time: times[i], value: v } : null))
           .filter(Boolean) as { time: UTCTimestamp; value: number }[];
@@ -161,48 +227,48 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
           .map((v, i) => (v !== null ? { time: times[i], value: v } : null))
           .filter(Boolean) as { time: UTCTimestamp; value: number }[];
 
-        const fastLine = chart.addSeries(LineSeries, {
+        chart.addSeries(LineSeries, {
           color: "#3b82f6",
           lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
-        });
-        fastLine.setData(fastData);
+        }).setData(fastData);
 
-        const slowLine = chart.addSeries(LineSeries, {
+        chart.addSeries(LineSeries, {
           color: "#f59e0b",
           lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
-        });
-        slowLine.setData(slowData);
+        }).setData(slowData);
 
-        // Color candles by CDC zone
-        const zoneColorMap: Record<string, string> = {
-          green: "#10b981",
-          red: "#ef4444",
-          blue: "#3b82f6",
-          lightblue: "#67e8f9",
-          orange: "#f97316",
-          yellow: "#eab308",
-        };
-        const coloredCandles = klines.map((k, i) => {
-          const zone = indicators.cdcActionZone.zone[i];
-          const c = zone ? zoneColorMap[zone] : undefined;
-          return {
-            time: toUTC(k.openTime),
-            open: +k.open,
-            high: +k.high,
-            low: +k.low,
-            close: +k.close,
-            ...(c ? { color: c, wickColor: c, borderColor: c } : {}),
+        // Color candles by CDC zone when it's the active strategy
+        if (strategyId === "cdc_actionzone") {
+          const zoneColorMap: Record<string, string> = {
+            green: "#10b981",
+            red: "#ef4444",
+            blue: "#3b82f6",
+            lightblue: "#67e8f9",
+            orange: "#f97316",
+            yellow: "#eab308",
           };
-        });
-        candleSeries.setData(coloredCandles);
+          const coloredCandles = klines.map((k, i) => {
+            const zone = indicators.cdcActionZone.zone[i];
+            const c = zone ? zoneColorMap[zone] : undefined;
+            return {
+              time: toUTC(k.openTime),
+              open: +k.open,
+              high: +k.high,
+              low: +k.low,
+              close: +k.close,
+              ...(c ? { color: c, wickColor: c, borderColor: c } : {}),
+            };
+          });
+          candleSeries.setData(coloredCandles);
+        }
       }
 
       // Supertrend overlay
-      if (strategyId === "supertrend") {
+      if (showSupertrendLine) {
         const st = indicators.supertrend;
         const upData: ({ time: UTCTimestamp; value: number } | { time: UTCTimestamp })[] = [];
         const dnData: ({ time: UTCTimestamp; value: number } | { time: UTCTimestamp })[] = [];
@@ -242,21 +308,8 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
         }).setData(dnData as any);
       }
 
-      // // VWAP line (shown for RSI strategy)
-      // if (strategyId === "rsi") {
-      //   const vwapData = indicators.vwap.map((v, i) => ({ time: times[i], value: v }));
-      //   chart.addSeries(LineSeries, {
-      //     color: "rgba(168,85,247,0.5)",
-      //     lineWidth: 1,
-      //     lineStyle: 2,
-      //     priceLineVisible: false,
-      //     lastValueVisible: false,
-      //     title: "VWAP",
-      //   }).setData(vwapData);
-      // }
-
       // SMC: Active Order Block levels
-      if (strategyId === "smc") {
+      if (showSmcOb) {
         const activeOBs = indicators.smc.internalOrderBlocks.filter((ob) => !ob.mitigated);
         for (const ob of activeOBs.slice(-10)) {
           const midPrice = (ob.high + ob.low) / 2;
@@ -322,7 +375,7 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
         height: 120,
         timeScale: {
           ...chartOptions.timeScale,
-          visible: !showMacd,
+          visible: !showMacd && !showSqz,
         },
       });
       rsiChartRef.current = rsiChart;
@@ -403,6 +456,10 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
         ...chartOptions,
         width: macdRef.current.clientWidth,
         height: 140,
+        timeScale: {
+          ...chartOptions.timeScale,
+          visible: !showSqz,
+        },
       });
       macdChartRef.current = macdChart;
 
@@ -504,11 +561,112 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
       }
     }
 
+    // ═══ SQUEEZE MOMENTUM CHART (separate sub-chart) ═══
+    if (showSqz && indicators && sqzRef.current) {
+      const sqzChart = createChart(sqzRef.current, {
+        ...chartOptions,
+        width: sqzRef.current.clientWidth,
+        height: 120,
+      });
+      sqzChartRef.current = sqzChart;
+
+      const times = klines.map((k) => toUTC(k.openTime));
+      const sqz = indicators.squeezeMomentum;
+
+      // 4-color histogram
+      const sqzColorMap: Record<string, string> = {
+        lime: "#84cc16",
+        green: "#166534",
+        red: "#ef4444",
+        maroon: "#7f1d1d",
+      };
+      const sqzHistData = sqz.value
+        .map((v, i) => {
+          if (v === null) return null;
+          const c = sqz.histColor[i];
+          return {
+            time: times[i],
+            value: v,
+            color: c ? sqzColorMap[c] ?? "#6b7280" : "#6b7280",
+          };
+        })
+        .filter(Boolean) as { time: UTCTimestamp; value: number; color: string }[];
+
+      sqzChart.addSeries(HistogramSeries, {
+        priceLineVisible: false,
+        lastValueVisible: true,
+      }).setData(sqzHistData);
+
+      // Zero line
+      sqzChart.addSeries(LineSeries, {
+        color: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.1)",
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      }).setData([
+        { time: times[0], value: 0 },
+        { time: times[times.length - 1], value: 0 },
+      ]);
+
+      sqzChart.timeScale().fitContent();
+
+      // Sync timescale with main chart
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (syncingRef.current || !range) return;
+        syncingRef.current = true;
+        sqzChart.timeScale().setVisibleLogicalRange(range);
+        syncingRef.current = false;
+      });
+      sqzChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (syncingRef.current || !range) return;
+        syncingRef.current = true;
+        chart.timeScale().setVisibleLogicalRange(range);
+        syncingRef.current = false;
+      });
+
+      // Sync with RSI if visible
+      if (rsiChartRef.current) {
+        const rsiChart = rsiChartRef.current;
+        rsiChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (syncingRef.current || !range) return;
+          syncingRef.current = true;
+          sqzChart.timeScale().setVisibleLogicalRange(range);
+          syncingRef.current = false;
+        });
+        sqzChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (syncingRef.current || !range) return;
+          syncingRef.current = true;
+          rsiChart.timeScale().setVisibleLogicalRange(range);
+          syncingRef.current = false;
+        });
+      }
+
+      // Sync with MACD if visible
+      if (macdChartRef.current) {
+        const macdChart = macdChartRef.current;
+        macdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (syncingRef.current || !range) return;
+          syncingRef.current = true;
+          sqzChart.timeScale().setVisibleLogicalRange(range);
+          syncingRef.current = false;
+        });
+        sqzChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (syncingRef.current || !range) return;
+          syncingRef.current = true;
+          macdChart.timeScale().setVisibleLogicalRange(range);
+          syncingRef.current = false;
+        });
+      }
+    }
+
     // ─── Resize handler ──────────────────────────────────────
     const handleResize = () => {
       if (mainRef.current && chartRef.current) chartRef.current.applyOptions({ width: mainRef.current.clientWidth });
       if (rsiRef.current && rsiChartRef.current) rsiChartRef.current.applyOptions({ width: rsiRef.current.clientWidth });
       if (macdRef.current && macdChartRef.current) macdChartRef.current.applyOptions({ width: macdRef.current.clientWidth });
+      if (sqzRef.current && sqzChartRef.current) sqzChartRef.current.applyOptions({ width: sqzRef.current.clientWidth });
     };
     window.addEventListener("resize", handleResize);
 
@@ -517,12 +675,14 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
       chartRef.current?.remove();
       rsiChartRef.current?.remove();
       macdChartRef.current?.remove();
+      sqzChartRef.current?.remove();
       chartRef.current = null;
       rsiChartRef.current = null;
       macdChartRef.current = null;
+      sqzChartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [klines, indicators, btResult, strategyId, isDark]);
+  }, [klines, indicators, btResult, strategyId, isDark, showVwap, showCdcEma, showSupertrendLine, showSmcOb, showRsi, showMacd, showSqz]);
 
   if (klines.length === 0) return null;
 
@@ -557,24 +717,23 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
             <span className="text-muted-foreground/60">กดรัน Backtest เพื่อแสดงสัญญาณซื้อ/ขาย</span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-          {strategyId === "cdc_actionzone" && indicators && (
-            <>
-              <span className="text-blue-500">Fast EMA</span>
-              <span className="text-amber-500">Slow EMA</span>
-            </>
-          )}
-          {strategyId === "supertrend" && indicators && (
-            <>
-              <span className="text-emerald-500">Uptrend</span>
-              <span className="text-red-500">Downtrend</span>
-            </>
-          )}
-          {/* {strategyId === "rsi" && indicators && (
-            <span className="text-purple-400/60">VWAP</span>
-          )} */}
-        </div>
       </div>
+
+      {/* Indicator toggles */}
+      {indicators && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 border-b border-border/20 bg-muted/10">
+          <span className="text-[9px] font-medium text-muted-foreground/60 uppercase tracking-wider mr-1">Overlay:</span>
+          <OverlayToggle label="VWAP" color="#a855f7" active={showVwap} onToggle={() => setShowVwap(v => !v)} />
+          <OverlayToggle label="CDC EMA" color="#3b82f6" secondColor="#f59e0b" active={showCdcEma} onToggle={() => setShowCdcEma(v => !v)} />
+          <OverlayToggle label="Supertrend" color="#10b981" secondColor="#ef4444" active={showSupertrendLine} onToggle={() => setShowSupertrendLine(v => !v)} />
+          <OverlayToggle label="SMC OB" color="#6b7280" active={showSmcOb} onToggle={() => setShowSmcOb(v => !v)} />
+          <span className="text-[9px] text-muted-foreground/30 mx-0.5">|</span>
+          <span className="text-[9px] font-medium text-muted-foreground/60 uppercase tracking-wider mr-1">Panel:</span>
+          <OverlayToggle label="RSI" color="#a78bfa" active={showRsiToggle} onToggle={() => setShowRsiToggle(v => !v)} />
+          <OverlayToggle label="MACD" color="#22d3ee" active={showMacdToggle} onToggle={() => setShowMacdToggle(v => !v)} />
+          <OverlayToggle label="SQZ Mom" color="#84cc16" active={showSqzToggle} onToggle={() => setShowSqzToggle(v => !v)} />
+        </div>
+      )}
 
       {/* Main candlestick chart */}
       <div ref={mainRef} className="w-full" />
@@ -601,6 +760,20 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
             <span className="text-[9px] text-cyan-400/50">Hist</span>
           </div>
           <div ref={macdRef} className="w-full" />
+        </div>
+      )}
+
+      {/* Squeeze Momentum sub-chart */}
+      {showSqz && (
+        <div className="border-t border-border/30">
+          <div className="flex items-center gap-2 px-3 py-0.5 bg-muted/10">
+            <span className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Squeeze Mom</span>
+            <span className="text-[9px] text-lime-400/50">Lime</span>
+            <span className="text-[9px] text-green-600/50">Green</span>
+            <span className="text-[9px] text-red-500/50">Red</span>
+            <span className="text-[9px] text-red-800/50">Maroon</span>
+          </div>
+          <div ref={sqzRef} className="w-full" />
         </div>
       )}
     </div>

@@ -54,6 +54,10 @@ const PARAM_LABELS: Record<string, string> = {
   signalLength: "Signal SMA",
   atrPeriod: "ATR Period",
   multiplier: "ATR Multiplier",
+  bbLength: "BB Length",
+  bbMult: "BB MultFactor",
+  kcLength: "KC Length",
+  kcMult: "KC MultFactor",
 };
 
 // ─── Formatting ────────────────────────────────────────────────
@@ -521,6 +525,14 @@ export default function KlinesPage() {
                               {key === "multiplier" && "ตัวคูณ ATR (1.0-6.0) — ค่าน้อย=Band แคบ สัญญาณเยอะ ค่ามาก=Band กว้าง จับเทรนด์ใหญ่"}
                             </p>
                           )}
+                          {strategyId === "squeeze_momentum" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "bbLength" && "Bollinger Bands period (10-30) — ค่าน้อย=BB แคบ Squeeze บ่อย ค่ามาก=BB กว้าง"}
+                              {key === "bbMult" && "BB Multiplier (1.0-3.0) — ค่าน้อย=BB แคบ ค่ามาก=BB กว้าง"}
+                              {key === "kcLength" && "Keltner Channel period (10-30) — ค่าน้อย=KC ไว ค่ามาก=KC เสถียร"}
+                              {key === "kcMult" && "KC Multiplier (1.0-3.0) — ค่าน้อย=Squeeze ง่าย ค่ามาก=Squeeze ยาก"}
+                            </p>
+                          )}
                         </div>
                       </Field>
                     ))}
@@ -780,6 +792,93 @@ export default function KlinesPage() {
                   </div>
                 )}
 
+                {/* Squeeze Momentum explanation */}
+                {strategyId === "squeeze_momentum" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Squeeze Momentum Indicator [LazyBear] คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Squeeze Momentum เป็นตัวชี้วัดที่รวม <span className="font-medium text-foreground/80">Bollinger Bands Squeeze</span> กับ <span className="font-medium text-foreground/80">Momentum</span> เข้าด้วยกัน
+                      เมื่อ Bollinger Bands หดตัวเข้าไปอยู่ภายใน Keltner Channels แสดงว่าตลาดกำลัง &quot;บีบตัว&quot; (Squeeze)
+                      — เมื่อ Squeeze คลายตัว ราคามักจะพุ่งแรงไปในทิศทางของ Momentum
+                    </p>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">Histogram 4 สี (Momentum):</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        <span className="text-lime-400">Lime = เพิ่มขึ้น &amp; เหนือ 0 → Momentum ขาขึ้นแรง</span>
+                        <span className="text-green-600">Green = ลดลง &amp; เหนือ 0 → Momentum ขาขึ้นอ่อน</span>
+                        <span className="text-red-500">Red = ลดลง &amp; ใต้ 0 → Momentum ขาลงแรง</span>
+                        <span className="text-red-800">Maroon = เพิ่มขึ้น &amp; ใต้ 0 → Momentum ขาลงอ่อน</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">จุดตรง Squeeze (จุดกลาง):</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-foreground/70">จุดดำ = Squeeze กำลังบีบ (BB อยู่ภายใน KC) → เตรียมตัว!</span>
+                        <span className="text-muted-foreground">จุดเทา = Squeeze ปลดปล่อย (BB อยู่นอก KC) → ราคากำลังวิ่ง</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → Momentum ข้ามขึ้นเหนือ 0 (เปลี่ยนจากลบเป็นบวก)</span>
+                        <span className="text-red-500">SELL → Momentum ข้ามลงใต้ 0 (เปลี่ยนจากบวกเป็นลบ)</span>
+                      </div>
+                    </div>
+
+                    <Separator className="my-1.5" />
+
+                    <div className="space-y-1.5 text-[10px]">
+                      <p className="font-medium text-foreground/80">ความหมายของพารามิเตอร์:</p>
+                      <div className="space-y-2">
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-blue-400">BB Length (ค่าปัจจุบัน: {strategyParams.bbLength ?? 20})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            ความยาว Bollinger Bands — กำหนดขนาดของ BB ที่ใช้เทียบกับ Keltner Channel
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (10-15) → BB แคบลง → Squeeze เกิดบ่อยขึ้น</p>
+                            <p className="text-red-500/80">ค่ามาก (25-30) → BB กว้างขึ้น → Squeeze เกิดยากขึ้น แต่มีนัยสำคัญมากขึ้น</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-purple-400">BB MultFactor (ค่าปัจจุบัน: {strategyParams.bbMult ?? 2.0})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            ตัวคูณ Standard Deviation ของ Bollinger Bands
+                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-emerald-500/80">ค่าน้อย (1.0-1.5) → BB แคบมาก → Squeeze ง่าย สัญญาณเยอะ</p>
+                            <p className="text-red-500/80">ค่ามาก (2.5-3.0) → BB กว้างมาก → Squeeze ยาก สัญญาณน้อยแต่แม่นยำ</p>
+                            <p className="text-muted-foreground/70">ค่ามาตรฐาน: 2.0</p>
+                          </div>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-amber-400">KC Length (ค่าปัจจุบัน: {strategyParams.kcLength ?? 20})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            ความยาว Keltner Channel — ใช้เป็น &quot;กรอบอ้างอิง&quot; สำหรับ Squeeze
+                          </p>
+                        </div>
+                        <div className="rounded border border-border/30 bg-background/50 p-2">
+                          <p className="font-medium text-cyan-400">KC MultFactor (ค่าปัจจุบัน: {strategyParams.kcMult ?? 1.5})</p>
+                          <p className="text-muted-foreground mt-0.5">
+                            ตัวคูณ ATR ของ Keltner Channel — ค่าน้อย=KC แคบ (Squeeze ง่ายขึ้น) ค่ามาก=KC กว้าง (Squeeze ยากขึ้น)
+                          </p>
+                          <p className="text-muted-foreground/70 mt-0.5">ค่ามาตรฐาน: 1.5</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2 text-[9px] text-amber-500/80">
+                      <p className="font-medium">วิธีใช้:</p>
+                      <p>1. สังเกตจุดดำ (Squeeze On) — แสดงว่าตลาดกำลังสะสมแรง</p>
+                      <p>2. เมื่อจุดเปลี่ยนเป็นเทา (Squeeze Off) + Histogram เปลี่ยนสี → สัญญาณเข้าเทรด</p>
+                      <p>3. Histogram สีเข้ม (Lime/Red) = โมเมนตัมแรง, สีอ่อน (Green/Maroon) = โมเมนตัมอ่อนลง → เตรียมออก</p>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </CardContent>
           </Card>
@@ -996,6 +1095,30 @@ function IndicatorPanel({ indicators, klines }: { indicators: AllIndicators; kli
         ? `ราคาอยู่เหนือ Supertrend ${Math.abs(distance).toFixed(2)}%`
         : `ราคาอยู่ใต้ Supertrend ${Math.abs(distance).toFixed(2)}%`,
       color: distance >= 0 ? "text-emerald-500" : "text-red-500",
+    });
+  }
+
+  // Squeeze Momentum
+  const sqz = indicators.squeezeMomentum;
+  const sqzVal = sqz.value[last];
+  const sqzColor = sqz.histColor[last];
+  const sqzIsOn = sqz.sqzOn[last];
+  const sqzSignal = sqz.signal[last];
+
+  if (sqzVal !== null) {
+    const sqzColorLabels: Record<string, { label: string; color: string }> = {
+      lime: { label: "Momentum ขึ้น เหนือ 0 (ขาขึ้นแรง)", color: "text-lime-400" },
+      green: { label: "Momentum ลง เหนือ 0 (ขาขึ้นอ่อน)", color: "text-green-600" },
+      red: { label: "Momentum ลง ใต้ 0 (ขาลงแรง)", color: "text-red-500" },
+      maroon: { label: "Momentum ขึ้น ใต้ 0 (ขาลงอ่อน)", color: "text-red-800" },
+    };
+    const sc = sqzColor ? sqzColorLabels[sqzColor] : null;
+
+    rows.push({
+      name: "Squeeze Mom",
+      value: sqzVal.toFixed(4),
+      signal: `${sc?.label ?? "N/A"} | ${sqzIsOn ? "SQUEEZE ON (บีบตัว)" : "SQUEEZE OFF"}${sqzSignal ? ` | ${sqzSignal}` : ""}`,
+      color: sc?.color ?? "text-muted-foreground",
     });
   }
 

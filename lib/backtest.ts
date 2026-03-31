@@ -42,7 +42,8 @@ export type StrategyId =
   | "cdc_actionzone"
   | "smc"
   | "cm_macd"
-  | "supertrend";
+  | "supertrend"
+  | "squeeze_momentum";
 
 export interface StrategyConfig {
   id: StrategyId;
@@ -81,6 +82,12 @@ export const STRATEGIES: StrategyConfig[] = [
     name: "Supertrend",
     description: "ATR-based trend follower — Buy เมื่อเทรนด์เปลี่ยนเป็นขาขึ้น, Sell เมื่อเปลี่ยนเป็นขาลง",
     params: { atrPeriod: 10, multiplier: 3.0 },
+  },
+  {
+    id: "squeeze_momentum",
+    name: "Squeeze Momentum [LazyBear]",
+    description: "BB Squeeze + Momentum — Buy เมื่อ momentum ข้ามเหนือ 0, Sell เมื่อข้ามใต้ 0",
+    params: { bbLength: 20, bbMult: 2.0, kcLength: 20, kcMult: 1.5 },
   },
 ];
 
@@ -131,12 +138,21 @@ function supertrendStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[]
   });
 }
 
+function squeezeMomentumStrategy(_k: KlineData[], ind: AllIndicators): SignalAction[] {
+  return ind.squeezeMomentum.signal.map((sig) => {
+    if (sig === "BUY") return "BUY";
+    if (sig === "SELL") return "SELL";
+    return "HOLD";
+  });
+}
+
 const STRATEGY_FNS: Record<StrategyId, SignalFn> = {
   rsi: rsiStrategy,
   cdc_actionzone: cdcActionZoneStrategy,
   smc: smcStrategy,
   cm_macd: cmMacdStrategy,
   supertrend: supertrendStrategy,
+  squeeze_momentum: squeezeMomentumStrategy,
 };
 
 // ─── Backtest Engine ───────────────────────────────────────────
@@ -155,6 +171,10 @@ export function runBacktest(
     cmMacdSignal: strategyId === "cm_macd" ? (params.signalLength ?? 9) : undefined,
     supertrendPeriod: strategyId === "supertrend" ? (params.atrPeriod ?? 10) : undefined,
     supertrendMultiplier: strategyId === "supertrend" ? (params.multiplier ?? 3.0) : undefined,
+    sqzMomBBLength: strategyId === "squeeze_momentum" ? (params.bbLength ?? 20) : undefined,
+    sqzMomBBMult: strategyId === "squeeze_momentum" ? (params.bbMult ?? 2.0) : undefined,
+    sqzMomKCLength: strategyId === "squeeze_momentum" ? (params.kcLength ?? 20) : undefined,
+    sqzMomKCMult: strategyId === "squeeze_momentum" ? (params.kcMult ?? 1.5) : undefined,
   });
   const signals = STRATEGY_FNS[strategyId](klines, indicators, params);
 

@@ -863,6 +863,216 @@ export function supertrend(
   };
 }
 
+// ─── Squeeze Momentum Indicator [LazyBear] ─────────────────────
+// Bollinger Bands squeeze on Keltner Channels — momentum histogram
+// with 4-color logic + squeeze on/off detection.
+
+export type SqzMomColor = "lime" | "green" | "red" | "maroon";
+
+export interface SqueezeMomentumResult {
+  value: (number | null)[];               // momentum histogram value
+  histColor: (SqzMomColor | null)[];      // lime/green/red/maroon
+  sqzOn: boolean[];                       // squeeze is active (BB inside KC)
+  sqzOff: boolean[];                      // squeeze released (BB outside KC)
+  noSqz: boolean[];                       // no squeeze
+  signal: ("BUY" | "SELL" | null)[];      // trading signals
+}
+
+/**
+ * Standard deviation helper (population stdev matching PineScript stdev())
+ */
+function stdev(data: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { result.push(null); continue; }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j];
+    const mean = sum / period;
+    let sqSum = 0;
+    for (let j = i - period + 1; j <= i; j++) sqSum += (data[j] - mean) ** 2;
+    result.push(Math.sqrt(sqSum / period));
+  }
+  return result;
+}
+
+/**
+ * Highest high over lookback period
+ */
+function highest(data: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { result.push(null); continue; }
+    let max = -Infinity;
+    for (let j = i - period + 1; j <= i; j++) if (data[j] > max) max = data[j];
+    result.push(max);
+  }
+  return result;
+}
+
+/**
+ * Lowest low over lookback period
+ */
+function lowest(data: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { result.push(null); continue; }
+    let min = Infinity;
+    for (let j = i - period + 1; j <= i; j++) if (data[j] < min) min = data[j];
+    result.push(min);
+  }
+  return result;
+}
+
+/**
+ * Linear regression value (like PineScript linreg(source, length, offset))
+ */
+function linreg(data: number[], period: number, offset: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    const end = i - offset;
+    const start = end - period + 1;
+    if (start < 0 || end < 0 || end >= data.length) { result.push(null); continue; }
+    // Linear regression: y = a + b*x, return value at x = period-1
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let j = 0; j < period; j++) {
+      const x = j;
+      const y = data[start + j];
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumX2 += x * x;
+    }
+    const n = period;
+    const denom = n * sumX2 - sumX * sumX;
+    if (denom === 0) { result.push(null); continue; }
+    const b = (n * sumXY - sumX * sumY) / denom;
+    const a = (sumY - b * sumX) / n;
+    result.push(a + b * (period - 1 - offset));
+  }
+  return result;
+}
+
+export function squeezeMomentum(
+  klines: KlineData[],
+  bbLength = 20,
+  bbMult = 2.0,
+  kcLength = 20,
+  kcMult = 1.5,
+): SqueezeMomentumResult {
+  const c = closes(klines);
+  const h = highs(klines);
+  const l = lows(klines);
+  const len = klines.length;
+
+  // True Range for KC
+  const tr: number[] = [];
+  for (let i = 0; i < len; i++) {
+    if (i === 0) { tr.push(h[i] - l[i]); continue; }
+    tr.push(Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])));
+  }
+
+  // BB: basis = SMA(close, length), dev = mult * stdev(close, length)
+  const basis = sma(c, bbLength);
+  const dev = stdev(c, bbLength);
+
+  // KC: ma = SMA(close, kcLength), rangema = SMA(TR, kcLength)
+  const kcMa = sma(c, kcLength);
+  const rangema = sma(tr, kcLength);
+
+  // Squeeze detection + momentum value
+  const value: (number | null)[] = [];
+  const histColor: (SqzMomColor | null)[] = [];
+  const sqzOn: boolean[] = [];
+  const sqzOff: boolean[] = [];
+  const noSqz: boolean[] = [];
+  const signal: ("BUY" | "SELL" | null)[] = [];
+
+  // Precompute highest/lowest/SMA for momentum calculation
+  const highestHigh = highest(h, kcLength);
+  const lowestLow = lowest(l, kcLength);
+
+  // Momentum source: close - avg(avg(highest(high,KC), lowest(low,KC)), sma(close,KC))
+  const momSource: number[] = [];
+  for (let i = 0; i < len; i++) {
+    const hh = highestHigh[i];
+    const ll = lowestLow[i];
+    const ma = kcMa[i];
+    if (hh === null || ll === null || ma === null) {
+      momSource.push(c[i]); // fallback
+    } else {
+      momSource.push(c[i] - ((hh + ll) / 2 + ma) / 2);
+    }
+  }
+
+  // linreg(momSource, kcLength, 0)
+  const valArr = linreg(momSource, kcLength, 0);
+
+  for (let i = 0; i < len; i++) {
+    const b = basis[i];
+    const d = dev[i];
+    const km = kcMa[i];
+    const rm = rangema[i];
+
+    if (b === null || d === null || km === null || rm === null) {
+      value.push(null);
+      histColor.push(null);
+      sqzOn.push(false);
+      sqzOff.push(false);
+      noSqz.push(true);
+      signal.push(null);
+      continue;
+    }
+
+    const upperBB = b + bbMult * d;
+    const lowerBB = b - bbMult * d;
+    const upperKC = km + kcMult * rm;
+    const lowerKC = km - kcMult * rm;
+
+    const isOn = lowerBB > lowerKC && upperBB < upperKC;
+    const isOff = lowerBB < lowerKC && upperBB > upperKC;
+    sqzOn.push(isOn);
+    sqzOff.push(isOff);
+    noSqz.push(!isOn && !isOff);
+
+    const val = valArr[i];
+    value.push(val);
+
+    // 4-color: lime = up & positive, green = down & positive, red = down & negative, maroon = up & negative
+    if (val !== null) {
+      const prevVal = i > 0 ? valArr[i - 1] : null;
+      if (prevVal !== null) {
+        if (val > 0) {
+          histColor.push(val > prevVal ? "lime" : "green");
+        } else {
+          histColor.push(val < prevVal ? "red" : "maroon");
+        }
+      } else {
+        histColor.push(val > 0 ? "lime" : "red");
+      }
+    } else {
+      histColor.push(null);
+    }
+
+    // Signal: momentum crosses zero + squeeze release
+    // BUY: val crosses above 0 (or squeeze off + positive momentum increasing)
+    // SELL: val crosses below 0 (or squeeze off + negative momentum increasing)
+    if (val !== null && i > 0) {
+      const prevVal2 = valArr[i - 1];
+      if (prevVal2 !== null) {
+        if (prevVal2 <= 0 && val > 0) signal.push("BUY");
+        else if (prevVal2 >= 0 && val < 0) signal.push("SELL");
+        else signal.push(null);
+      } else {
+        signal.push(null);
+      }
+    } else {
+      signal.push(null);
+    }
+  }
+
+  return { value, histColor, sqzOn, sqzOff, noSqz, signal };
+}
+
 // ─── Compute all indicators for klines ─────────────────────────
 export interface AllIndicators {
   rsi: (number | null)[];
@@ -873,6 +1083,7 @@ export interface AllIndicators {
   smc: SMCResult;
   cmMacd: CMMAcDResult;
   supertrend: SupertrendResult;
+  squeezeMomentum: SqueezeMomentumResult;
 }
 
 export function computeAll(klines: KlineData[], overrides?: {
@@ -884,6 +1095,10 @@ export function computeAll(klines: KlineData[], overrides?: {
   cmMacdSignal?: number;
   supertrendPeriod?: number;
   supertrendMultiplier?: number;
+  sqzMomBBLength?: number;
+  sqzMomBBMult?: number;
+  sqzMomKCLength?: number;
+  sqzMomKCMult?: number;
 }): AllIndicators {
   const c = closes(klines);
   return {
@@ -895,5 +1110,6 @@ export function computeAll(klines: KlineData[], overrides?: {
     smc: smartMoneyConcepts(klines, overrides?.smcSwingSize ?? 50, overrides?.smcInternalSize ?? 5),
     cmMacd: cmMacdUltMTF(c, overrides?.cmMacdFast ?? 12, overrides?.cmMacdSlow ?? 26, overrides?.cmMacdSignal ?? 9),
     supertrend: supertrend(klines, overrides?.supertrendPeriod ?? 10, overrides?.supertrendMultiplier ?? 3.0),
+    squeezeMomentum: squeezeMomentum(klines, overrides?.sqzMomBBLength ?? 20, overrides?.sqzMomBBMult ?? 2.0, overrides?.sqzMomKCLength ?? 20, overrides?.sqzMomKCMult ?? 1.5),
   };
 }
