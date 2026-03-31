@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useMemo } from "react";
+import { useTheme } from "next-themes";
 import {
   createChart,
   CandlestickSeries,
@@ -47,6 +48,9 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
   // Prevent sync loops
   const syncingRef = useRef(false);
 
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
   // Prepare candlestick data
   const candleData = useMemo(() => {
     return klines.map((k) => ({
@@ -83,25 +87,30 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
     rsiChartRef.current = null;
     macdChartRef.current = null;
 
+    const gridColor = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.06)";
+    const crossColor = isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)";
+    const borderColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.1)";
+    const textColor = isDark ? "#9ca3af" : "#6b7280";
+
     const chartOptions = {
       layout: {
         background: { color: "transparent" },
-        textColor: "#9ca3af",
+        textColor,
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.04)" },
-        horzLines: { color: "rgba(255,255,255,0.04)" },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       crosshair: {
-        vertLine: { color: "rgba(255,255,255,0.15)", width: 1 as const, style: 3 as const },
-        horzLine: { color: "rgba(255,255,255,0.15)", width: 1 as const, style: 3 as const },
+        vertLine: { color: crossColor, width: 1 as const, style: 3 as const },
+        horzLine: { color: crossColor, width: 1 as const, style: 3 as const },
       },
       rightPriceScale: {
-        borderColor: "rgba(255,255,255,0.08)",
+        borderColor,
       },
       timeScale: {
-        borderColor: "rgba(255,255,255,0.08)",
+        borderColor,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -513,7 +522,7 @@ export default function KlineGraph({ klines, indicators, btResult, strategyId }:
       macdChartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [klines, indicators, btResult, strategyId]);
+  }, [klines, indicators, btResult, strategyId, isDark]);
 
   if (klines.length === 0) return null;
 

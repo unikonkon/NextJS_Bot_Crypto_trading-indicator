@@ -24,6 +24,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import KlineGraph from "@/app/klines/ui/graph";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // ─── Constants ─────────────────────────────────────────────────
 const POPULAR_SYMBOLS = [
@@ -307,7 +308,7 @@ export default function KlinesPage() {
   }, [klines]);
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-[1400px] px-4 py-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -324,6 +325,7 @@ export default function KlinesPage() {
             {klines.length > 0 && (
               <Badge variant="secondary">{klines.length.toLocaleString()} แท่งเทียน</Badge>
             )}
+            <ThemeToggle />
           </div>
         </div>
         <Separator />
