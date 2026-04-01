@@ -238,6 +238,10 @@ export default function KlinesPage() {
   const fetchRealtime = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setKlines([]);
+    setIndicators(null);
+    setBtResult(null);
+    setBacktestProgress(null);
     try {
       const params = new URLSearchParams({ symbol: activeSymbol, interval, limit });
       const res = await fetch(`/api/klines?${params}`);
@@ -245,15 +249,85 @@ export default function KlinesPage() {
       const raw: BinanceKlineRaw[] = await res.json();
       setKlines(raw.map(parseKline));
       setLastFetch(new Date());
-      setBtResult(null);
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }
   }, [activeSymbol, interval, limit]);
 
+  // ─── Download (ตาม mode: Realtime หรือ Historical) ──────────
+  const downloadRealtime = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setKlines([]);
+    setIndicators(null);
+    setBtResult(null);
+    setBacktestProgress(startTime ? { current: 0 } : null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      let all: KlineData[] = [];
+
+      if (startTime) {
+        // ── Historical mode: ดึงข้อมูลย้อนหลัง ──
+        const st = new Date(startTime).getTime();
+        const et = endTime ? new Date(endTime).getTime() : Date.now();
+        let cur = st;
+        while (cur < et) {
+          if (controller.signal.aborted) break;
+          setBacktestProgress({ current: all.length });
+          const params = new URLSearchParams({
+            symbol: activeSymbol, interval, limit: "1000",
+            startTime: cur.toString(), endTime: et.toString(),
+          });
+          const res = await fetch(`/api/klines?${params}`, { signal: controller.signal });
+          if (!res.ok) { const b = await res.json(); throw new Error(b.error || `HTTP ${res.status}`); }
+          const raw: BinanceKlineRaw[] = await res.json();
+          if (raw.length === 0) break;
+          const parsed = raw.map(parseKline);
+          all.push(...parsed);
+          const last = parsed[parsed.length - 1].closeTime;
+          if (last >= et || raw.length < 1000) break;
+          cur = last + 1;
+          await new Promise(r => setTimeout(r, 100));
+        }
+      } else {
+        // ── Realtime mode: ดึงข้อมูลล่าสุดตาม limit ──
+        const params = new URLSearchParams({ symbol: activeSymbol, interval, limit });
+        const res = await fetch(`/api/klines?${params}`, { signal: controller.signal });
+        if (!res.ok) { const b = await res.json(); throw new Error(b.error || `HTTP ${res.status}`); }
+        const raw: BinanceKlineRaw[] = await res.json();
+        all = raw.map(parseKline);
+      }
+
+      // ── set klines ให้ UI แสดงผล ──
+      setKlines(all);
+      setLastFetch(new Date());
+
+      // ── สร้าง CSV และดาวน์โหลด ──
+      const header = "OpenTime,Open,High,Low,Close,Volume,CloseTime,QuoteAssetVolume,NumberOfTrades,TakerBuyBaseVolume,TakerBuyQuoteVolume";
+      const rows = all.map(k =>
+        `${new Date(k.openTime).toISOString()},${k.open},${k.high},${k.low},${k.close},${k.volume},${new Date(k.closeTime).toISOString()},${k.quoteAssetVolume},${k.numberOfTrades},${k.takerBuyBaseVolume},${k.takerBuyQuoteVolume}`
+      );
+      const csv = [header, ...rows].join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const suffix = startTime ? "historical" : "realtime";
+      a.download = `${activeSymbol}_${interval}_${all.length}_${suffix}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (!controller.signal.aborted) setError(String(err));
+    } finally {
+      setLoading(false); setBacktestProgress(null); abortRef.current = null;
+    }
+  }, [activeSymbol, interval, limit, startTime, endTime]);
+
   // ─── Fetch Historical ──────────────────────────────────────
   const fetchHistorical = useCallback(async () => {
     if (!startTime) { setError("กรุณาระบุเวลาเริ่มต้น"); return; }
-    setLoading(true); setError(null); setKlines([]); setBtResult(null);
+    setLoading(true); setError(null); setKlines([]); setIndicators(null); setBtResult(null);
     setBacktestProgress({ current: 0 });
     const controller = new AbortController();
     abortRef.current = controller;
@@ -402,6 +476,13 @@ export default function KlinesPage() {
                   <Button onClick={fetchRealtime} disabled={loading} className="h-9">
                     {loading ? "กำลังดึง..." : "ดึงข้อมูลล่าสุด"}
                   </Button>
+
+                  <Field label="ดาวโหลดไฟล์ ข้อมูลเรียลไทม์ จำนวนแท่งเทียน">
+                  <Button onClick={downloadRealtime} disabled={loading} className="h-9">
+                    {loading ? "กำลังดาวโหลด..." : "ดาวโหลดไฟล์"}
+                  </Button>
+                  </Field>
+                 
                 </div>
               </div>
 
@@ -1053,7 +1134,7 @@ export default function KlinesPage() {
         {btResult && <BacktestResults result={btResult} />}
 
         {/* Indicator Values */}
-        {indicators && <IndicatorPanel indicators={indicators} klines={klines} />}
+        {indicators && klines.length > 0 && <IndicatorPanel indicators={indicators} klines={klines} />}
 
         {/* Kline Table */}
         <KlineTable klines={klines} loading={loading} signals={btResult?.signals} />
