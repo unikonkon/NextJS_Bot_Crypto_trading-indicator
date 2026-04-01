@@ -240,7 +240,56 @@ export default function KlinesPage() {
   const [allBtRunning, setAllBtRunning] = useState(false);
   const [allBtExpanded, setAllBtExpanded] = useState<Set<StrategyId>>(new Set());
 
+  // dataShowUI state
+  const [csvFiles, setCsvFiles] = useState<string[]>([]);
+  const [csvLoading, setCsvLoading] = useState(false);
+
   const activeSymbol = customSymbol.trim().toUpperCase() || symbol;
+
+  // Fetch available CSV files on mount
+  useEffect(() => {
+    fetch("/api/dataShowUI")
+      .then(res => res.json())
+      .then((files: string[]) => setCsvFiles(Array.isArray(files) ? files : []))
+      .catch(() => setCsvFiles([]));
+  }, []);
+
+  // Load CSV file into klines
+  const loadCsvFile = useCallback(async (filename: string) => {
+    setCsvLoading(true);
+    setError(null);
+    setKlines([]);
+    setIndicators(null);
+    setBtResult(null);
+    setAllBtResults(null);
+    setBacktestProgress(null);
+    try {
+      const res = await fetch(`/api/dataShowUI?file=${encodeURIComponent(filename)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const lines = text.trim().split("\n");
+      // skip header
+      const data: KlineData[] = lines.slice(1).map(line => {
+        const cols = line.split(",");
+        return {
+          openTime: new Date(cols[0]).getTime(),
+          open: cols[1],
+          high: cols[2],
+          low: cols[3],
+          close: cols[4],
+          volume: cols[5],
+          closeTime: new Date(cols[6]).getTime(),
+          quoteAssetVolume: cols[7],
+          numberOfTrades: parseInt(cols[8], 10),
+          takerBuyBaseVolume: cols[9],
+          takerBuyQuoteVolume: cols[10],
+        };
+      });
+      setKlines(data);
+      setLastFetch(new Date());
+    } catch (err) { setError(String(err)); }
+    finally { setCsvLoading(false); }
+  }, []);
 
   // Compute indicators when klines change
   useEffect(() => {
@@ -554,6 +603,34 @@ export default function KlinesPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ═══ dataShowUI: Load from saved CSV files ═══ */}
+        {csvFiles.length > 0 && (
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>โหลดข้อมูลจากไฟล์ที่บันทึกไว้ ({csvFiles.length} ไฟล์)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-1.5">
+                {csvFiles.map(f => {
+                  const label = f.replace("_historical_realtime.csv", "").replace(/_/g, " ");
+                  return (
+                    <Button
+                      key={f}
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px] h-8 px-3"
+                      disabled={csvLoading || loading}
+                      onClick={() => loadCsvFile(f)}
+                    >
+                      {csvLoading ? "กำลังโหลด..." : label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Error */}
         {error && <ErrorCard message={error} />}
