@@ -52,7 +52,8 @@ export type StrategyId =
 export interface StrategyConfig {
   id: StrategyId;
   name: string;
-  description: string;
+  descriptionEn: string;
+  descriptionTh: string;
   params: Record<string, number>;
 }
 
@@ -60,61 +61,71 @@ export const STRATEGIES: StrategyConfig[] = [
   {
     id: "rsi",
     name: "RSI Overbought/Oversold",
-    description: "Buy RSI < 30, Sell RSI > 70",
+    descriptionEn: "Buy when RSI < 30, Sell when RSI > 70",
+    descriptionTh: "ซื้อ เมื่อ RSI < 30, ขาย เมื่อ RSI > 70",
     params: { period: 14, buyThreshold: 30, sellThreshold: 70 },
   },
   {
     id: "cdc_actionzone",
     name: "CDC ActionZone V3",
-    description: "EMA crossover zones — Buy on first Green bar, Sell on first Red bar",
+    descriptionEn: "EMA crossover zones — Buy on first Green bar, Sell on first Red bar",
+    descriptionTh: "โซน EMA ตัดกัน — ซื้อ เมื่อแท่งเขียวแรก, ขาย เมื่อแท่งแดงแรก",
     params: { fastPeriod: 12, slowPeriod: 26 },
   },
   {
     id: "smc",
     name: "Smart Money Concepts (SMC)",
-    description: "Buy on Bullish CHoCH/BOS (discount zone), Sell on Bearish CHoCH/BOS (premium zone)",
+    descriptionEn: "Buy on Bullish CHoCH/BOS (discount zone), Sell on Bearish CHoCH/BOS (premium zone)",
+    descriptionTh: "ซื้อ เมื่อ CHoCH/BOS ขาขึ้น (โซนส่วนลด), ขาย เมื่อ CHoCH/BOS ขาลง (โซนพรีเมียม)",
     params: { swingSize: 50, internalSize: 5 },
   },
   {
     id: "squeeze_momentum",
     name: "Squeeze Momentum [LazyBear]",
-    description: "BB Squeeze + Momentum — Buy เมื่อ momentum ข้ามเหนือ 0, Sell เมื่อข้ามใต้ 0",
+    descriptionEn: "BB Squeeze + Momentum — Buy when momentum crosses above 0, Sell when crosses below 0",
+    descriptionTh: "BB Squeeze + โมเมนตัม — ซื้อ เมื่อโมเมนตัมข้ามเหนือ 0, ขาย เมื่อข้ามใต้ 0",
     params: { bbLength: 20, bbMult: 2.0, kcLength: 20, kcMult: 1.5 },
   },
   {
     id: "cm_macd",
     name: "CM MacD Ultimate MTF",
-    description: "Enhanced MACD 4-Color — Buy เมื่อ MACD ตัดขึ้น Signal, Sell เมื่อ MACD ตัดลง Signal",
+    descriptionEn: "Enhanced MACD 4-Color — Buy when MACD crosses above Signal, Sell when crosses below Signal",
+    descriptionTh: "MACD 4 สี — ซื้อ เมื่อ MACD ตัดขึ้นเหนือ Signal, ขาย เมื่อ MACD ตัดลงใต้ Signal",
     params: { fastLength: 12, slowLength: 26, signalLength: 9 },
   },
   {
     id: "supertrend",
     name: "Supertrend",
-    description: "ATR-based trend follower — Buy เมื่อเทรนด์เปลี่ยนเป็นขาขึ้น, Sell เมื่อเปลี่ยนเป็นขาลง",
+    descriptionEn: "ATR-based trend follower — Buy when trend turns bullish, Sell when turns bearish",
+    descriptionTh: "ตามเทรนด์ด้วย ATR — ซื้อ เมื่อเทรนด์เปลี่ยนเป็นขาขึ้น, ขาย เมื่อเปลี่ยนเป็นขาลง",
     params: { atrPeriod: 10, multiplier: 3.0 },
   },
   {
     id: "msb_ob",
     name: "Market Structure Break & OB",
-    description: "ZigZag MSB — Buy เมื่อ Bullish MSB, Sell เมื่อ Bearish MSB พร้อม Order Block",
+    descriptionEn: "ZigZag MSB — Buy on Bullish MSB with Order Block, Sell on Bearish MSB with Order Block",
+    descriptionTh: "ZigZag MSB — ซื้อ เมื่อ Bullish MSB พร้อม Order Block, ขาย เมื่อ Bearish MSB พร้อม Order Block",
     params: { zigzagLen: 9, fibFactor: 0.33 },
   },
   {
     id: "support_resistance",
     name: "Support & Resistance Breaks",
-    description: "Pivot S/R + Volume — Buy เมื่อทะลุ Resistance, Sell เมื่อหลุด Support พร้อม Volume",
+    descriptionEn: "Pivot S/R + Volume — Buy when breaking Resistance, Sell when breaking Support with Volume",
+    descriptionTh: "Pivot S/R + Volume — ซื้อ เมื่อทะลุแนวต้าน, ขาย เมื่อหลุดแนวรับ พร้อม Volume ยืนยัน",
     params: { leftBars: 15, rightBars: 15, volumeThresh: 20 },
   },
   {
     id: "trendlines",
     name: "Trendlines with Breaks [LuxAlgo]",
-    description: "Dynamic trendlines — Buy เมื่อทะลุเส้นแนวต้าน, Sell เมื่อหลุดเส้นแนวรับ",
+    descriptionEn: "Dynamic trendlines — Buy when breaking resistance line, Sell when breaking support line",
+    descriptionTh: "เส้นเทรนด์ไดนามิก — ซื้อ เมื่อทะลุเส้นแนวต้าน, ขาย เมื่อหลุดเส้นแนวรับ",
     params: { trendLength: 14, trendMult: 1.0 },
   },
   {
     id: "ut_bot",
     name: "UT Bot Alerts",
-    description: "ATR Trailing Stop — Buy เมื่อราคาข้ามขึ้นเหนือ trailing stop, Sell เมื่อข้ามลง",
+    descriptionEn: "ATR Trailing Stop — Buy when price crosses above trailing stop, Sell when crosses below",
+    descriptionTh: "ATR Trailing Stop — ซื้อ เมื่อราคาข้ามขึ้นเหนือ trailing stop, ขาย เมื่อราคาข้ามลง",
     params: { keyValue: 1, utAtrPeriod: 10 },
   },
 ];

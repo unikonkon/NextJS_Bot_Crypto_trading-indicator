@@ -95,6 +95,20 @@ function pnlBg(v: number): string {
   return v > 0 ? "bg-emerald-500/10" : v < 0 ? "bg-red-500/10" : "bg-muted";
 }
 
+// ─── Strategy Description with colored Buy/Sell ───────────────
+function StrategyDesc({ text }: { text: string }) {
+  const parts = text.split(/(Buy|Sell|ซื้อ|ขาย)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part === "Buy" || part === "ซื้อ") return <span key={i} className="text-emerald-500 font-medium">{part}</span>;
+        if (part === "Sell" || part === "ขาย") return <span key={i} className="text-red-500 font-medium">{part}</span>;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 // ─── Mini Candle ───────────────────────────────────────────────
 function MiniCandle({ kline }: { kline: KlineData }) {
   const o = +kline.open, c = +kline.close, h = +kline.high, l = +kline.low;
@@ -478,11 +492,11 @@ export default function KlinesPage() {
                   </Button>
 
                   <Field label="ดาวโหลดไฟล์ ข้อมูลเรียลไทม์ จำนวนแท่งเทียน">
-                  <Button onClick={downloadRealtime} disabled={loading} className="h-9">
-                    {loading ? "กำลังดาวโหลด..." : "ดาวโหลดไฟล์"}
-                  </Button>
+                    <Button onClick={downloadRealtime} disabled={loading} className="h-9">
+                      {loading ? "กำลังดาวโหลด..." : "ดาวโหลดไฟล์"}
+                    </Button>
                   </Field>
-                 
+
                 </div>
               </div>
 
@@ -536,49 +550,65 @@ export default function KlinesPage() {
             </CardHeader>
             <CardContent className="pt-2">
               <div className="space-y-3">
-                <div className="flex justify-between">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Field label="กลยุทธ์ Indicator">
-                      <Select value={strategyId} onValueChange={(v) => {
-                        if (v) {
-                          const sid = v as StrategyId;
-                          setStrategyId(sid);
-                          const strat = STRATEGIES.find(s => s.id === sid);
-                          setStrategyParams(strat ? { ...strat.params } : {});
-                        }
-                      }}>
-                        <SelectTrigger className="w-72"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {STRATEGIES.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <div className="flex flex-wrap items-center gap-3 mt-3">
-                      <Field label="ค่าธรรมเนียม (%)">
-                        <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
-                      </Field>
-                      <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
-                        {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                {/* Strategy buttons */}
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-2">เลือกกลยุทธ์ Indicator</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STRATEGIES.map(s => (
+                      <Button
+                        key={s.id}
+                        variant={strategyId === s.id ? "default" : "outline"}
+                        size="sm"
+                        className={`text-[11px] h-8 px-3 ${strategyId === s.id ? "" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => {
+                          setStrategyId(s.id);
+                          setStrategyParams({ ...s.params });
+                          setBtResult(null);
+                        }}
+                      >
+                        {s.name}
                       </Button>
-                    </div>
+                    ))}
                   </div>
-                  {btResult && (
+                </div>
+
+                {/* Run controls + PnL */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <Field label="ค่าธรรมเนียม (%)">
+                      <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
+                    </Field>
+                    <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
+                      {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                    </Button>
+                  </div>
+                  {btResult ? (
                     <span className={`text-lg font-bold tabular-nums ${btResult.totalPnlPct >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       กำไรรวม: {btResult.totalPnlPct >= 0 ? "+" : ""}{btResult.totalPnlPct.toFixed(2)}%
                     </span>
-                  )}
-                  {!btResult && (
+                  ) : (
                     <span className="text-sm text-muted-foreground">กำไรรวม หลัง backtest : —</span>
                   )}
                 </div>
                 {/* Strategy description */}
-                <p className="text-[10px] text-muted-foreground">
-                  {STRATEGIES.find(s => s.id === strategyId)?.description}
-                </p>
+                {(() => {
+                  const strat = STRATEGIES.find(s => s.id === strategyId);
+                  if (!strat) return null;
+                  return (
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-muted-foreground">
+                        <StrategyDesc text={strat.descriptionEn} />
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        <StrategyDesc text={strat.descriptionTh} />
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Strategy-specific parameter inputs */}
                 {Object.keys(strategyParams).length > 0 && (
-                  <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex flex-wrap items-end space-x-4">
                     <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground w-full">ปรับค่าพารามิเตอร์</p>
                     {Object.entries(strategyParams).map(([key, val]) => (
                       <Field key={key} label={PARAM_LABELS[key] ?? key}>
