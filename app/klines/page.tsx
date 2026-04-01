@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   type KlineData,
   type BinanceKlineRaw,
@@ -236,6 +236,9 @@ export default function KlinesPage() {
   const [feesPct, setFeesPct] = useState("0.1");
   const [btResult, setBtResult] = useState<BacktestResult | null>(null);
   const [btRunning, setBtRunning] = useState(false);
+  const [allBtResults, setAllBtResults] = useState<{ strategyId: StrategyId; name: string; result: BacktestResult }[] | null>(null);
+  const [allBtRunning, setAllBtRunning] = useState(false);
+  const [allBtExpanded, setAllBtExpanded] = useState<Set<StrategyId>>(new Set());
 
   const activeSymbol = customSymbol.trim().toUpperCase() || symbol;
 
@@ -255,6 +258,7 @@ export default function KlinesPage() {
     setKlines([]);
     setIndicators(null);
     setBtResult(null);
+    setAllBtResults(null);
     setBacktestProgress(null);
     try {
       const params = new URLSearchParams({ symbol: activeSymbol, interval, limit });
@@ -274,6 +278,7 @@ export default function KlinesPage() {
     setKlines([]);
     setIndicators(null);
     setBtResult(null);
+    setAllBtResults(null);
     setBacktestProgress(startTime ? { current: 0 } : null);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -341,7 +346,7 @@ export default function KlinesPage() {
   // ─── Fetch Historical ──────────────────────────────────────
   const fetchHistorical = useCallback(async () => {
     if (!startTime) { setError("กรุณาระบุเวลาเริ่มต้น"); return; }
-    setLoading(true); setError(null); setKlines([]); setIndicators(null); setBtResult(null);
+    setLoading(true); setError(null); setKlines([]); setIndicators(null); setBtResult(null); setAllBtResults(null);
     setBacktestProgress({ current: 0 });
     const controller = new AbortController();
     abortRef.current = controller;
@@ -390,6 +395,28 @@ export default function KlinesPage() {
       finally { setBtRunning(false); }
     }, 10);
   }, [klines, strategyId, strategyParams, feesPct]);
+
+  // ─── Run All Backtests ─────────────────────────────────────
+  const runAllBt = useCallback(() => {
+    if (klines.length < 50) { setError("ต้องมีอย่างน้อย 50 แท่งเทียนเพื่อรัน Backtest"); return; }
+    setAllBtRunning(true);
+    setError(null);
+    setAllBtResults(null);
+    setTimeout(() => {
+      try {
+        const fees = parseFloat(feesPct) || 0.1;
+        const results = STRATEGIES.map(s => ({
+          strategyId: s.id,
+          name: s.name,
+          result: runBacktest(klines, s.id, { ...s.params }, fees),
+        }));
+        results.sort((a, b) => b.result.totalPnlPct - a.result.totalPnlPct);
+        setAllBtResults(results);
+        setAllBtExpanded(new Set());
+      } catch (err) { setError(String(err)); }
+      finally { setAllBtRunning(false); }
+    }, 10);
+  }, [klines, feesPct]);
 
   // Summary stats
   const summary = useMemo(() => {
@@ -541,7 +568,166 @@ export default function KlinesPage() {
           />
         )}
 
-        {/* ═══ BACKTEST ═══ */}
+        {/* ═══ BACKTEST All Indicator and Strategy ═══ */}
+        {klines.length > 0 && (
+          <Card size="sm">
+            <CardHeader className="border-b">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>ทดสอบกลยุทธ์ย้อนหลัง ทุก Indicator</CardTitle>
+                  <CardDescription>รันทุกกลยุทธ์ ({STRATEGIES.length} ตัว) บนข้อมูล {klines.length.toLocaleString()} แท่งเทียน — เรียงตามกำไรสูงสุด</CardDescription>
+                </div>
+                <Button onClick={runAllBt} disabled={allBtRunning || klines.length < 50} className="h-9 shrink-0">
+                  {allBtRunning ? "กำลังรัน..." : "รัน Backtest ทั้งหมด"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-3">
+              {!allBtResults && !allBtRunning && (
+                <p className="text-xs text-muted-foreground text-center py-6">กดปุ่ม &quot;รัน Backtest ทั้งหมด&quot; เพื่อเปรียบเทียบทุกกลยุทธ์</p>
+              )}
+              {allBtRunning && (
+                <div className="space-y-2 py-4">
+                  {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                </div>
+              )}
+              {allBtResults && (
+                <div className="space-y-2">
+                  {/* Summary table */}
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-8 text-center">#</TableHead>
+                          <TableHead>กลยุทธ์</TableHead>
+                          <TableHead className="text-right">กำไร/ขาดทุน</TableHead>
+                          <TableHead className="text-right">อัตราชนะ</TableHead>
+                          <TableHead className="text-right">จำนวนเทรด</TableHead>
+                          <TableHead className="text-right">Drawdown</TableHead>
+                          <TableHead className="text-right">Profit Factor</TableHead>
+                          <TableHead className="text-right">Sharpe</TableHead>
+                          <TableHead className="text-right">vs ซื้อถือ</TableHead>
+                          <TableHead className="w-10"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {allBtResults.map((item, idx) => {
+                          const r = item.result;
+                          const isExpanded = allBtExpanded.has(item.strategyId);
+                          const diff = r.totalPnlPct - r.buyAndHoldPct;
+                          return (
+                            <React.Fragment key={item.strategyId}>
+                              <TableRow
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => setAllBtExpanded(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.strategyId)) next.delete(item.strategyId);
+                                  else next.add(item.strategyId);
+                                  return next;
+                                })}
+                              >
+                                <TableCell className="text-center text-muted-foreground text-xs">{idx + 1}</TableCell>
+                                <TableCell className="font-medium text-xs">{item.name}</TableCell>
+                                <TableCell className={`text-right tabular-nums font-semibold ${pnlColor(r.totalPnlPct)}`}>
+                                  {r.totalPnlPct >= 0 ? "+" : ""}{r.totalPnlPct.toFixed(2)}%
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs ${r.winRate >= 50 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {r.winRate.toFixed(1)}%
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums text-xs">
+                                  {r.totalTrades} <span className="text-muted-foreground">({r.wins}W/{r.losses}L)</span>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums text-xs text-red-500">
+                                  -{r.maxDrawdownPct.toFixed(2)}%
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs ${r.profitFactor > 1 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {r.profitFactor === Infinity ? "INF" : r.profitFactor.toFixed(2)}
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs ${r.sharpeRatio > 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {r.sharpeRatio.toFixed(3)}
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs font-medium ${diff >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {diff >= 0 ? "+" : ""}{diff.toFixed(2)}%
+                                </TableCell>
+                                <TableCell className="text-center text-muted-foreground text-xs">
+                                  {isExpanded ? "▲" : "▼"}
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded && (
+                                <TableRow>
+                                  <TableCell colSpan={10} className="p-0">
+                                    <div className="border-t bg-muted/20 px-4 py-3 space-y-3">
+                                      {/* Strategy description */}
+                                      {(() => {
+                                        const strat = STRATEGIES.find(s => s.id === item.strategyId);
+                                        if (!strat) return null;
+                                        return (
+                                          <div className="space-y-0.5 mb-2">
+                                            <p className="text-[10px] text-muted-foreground"><StrategyDesc text={strat.descriptionEn} /></p>
+                                            <p className="text-[10px] text-muted-foreground"><StrategyDesc text={strat.descriptionTh} /></p>
+                                          </div>
+                                        );
+                                      })()}
+                                      {/* Stats grid */}
+                                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                        <StatCard label="กำไรเฉลี่ย" value={`+${r.avgWinPct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+                                        <StatCard label="ขาดทุนเฉลี่ย" value={`${r.avgLossPct.toFixed(2)}%`} color="text-red-500" size="sm" />
+                                        <StatCard label="เทรดที่ดีที่สุด" value={`+${r.bestTradePct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+                                        <StatCard label="เทรดที่แย่ที่สุด" value={`${r.worstTradePct.toFixed(2)}%`} color="text-red-500" size="sm" />
+                                      </div>
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <StatCard label="แท่งเทียนถือเฉลี่ย" value={`${r.avgBarsHeld.toFixed(1)}`} size="sm" />
+                                        <StatCard label="ซื้อแล้วถือ" value={`${r.buyAndHoldPct >= 0 ? "+" : ""}${r.buyAndHoldPct.toFixed(2)}%`} color={pnlColor(r.buyAndHoldPct)} size="sm" />
+                                        <StatCard label={diff >= 0 ? "กลยุทธ์ชนะซื้อถือ" : "ซื้อถือชนะกลยุทธ์"} value={`${diff >= 0 ? "+" : ""}${diff.toFixed(2)}%`} color={diff >= 0 ? "text-emerald-500" : "text-red-500"} size="sm" />
+                                      </div>
+                                      {/* Trade P&L pills */}
+                                      <div className="flex flex-wrap gap-1">
+                                        {r.trades.map((t, i) => (
+                                          <span
+                                            key={i}
+                                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${t.pnlPct >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}
+                                          >
+                                            #{i + 1} {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Best vs Worst summary */}
+                  {allBtResults.length >= 2 && (
+                    <div className="flex gap-3">
+                      <Card size="sm" className="flex-1 ring-emerald-500/20">
+                        <CardContent className="py-2.5">
+                          <p className="text-[10px] text-muted-foreground">กลยุทธ์ที่ดีที่สุด</p>
+                          <p className="text-sm font-semibold text-emerald-500">{allBtResults[0].name}</p>
+                          <p className="text-xs tabular-nums text-emerald-500">+{allBtResults[0].result.totalPnlPct.toFixed(2)}%</p>
+                        </CardContent>
+                      </Card>
+                      <Card size="sm" className="flex-1 ring-red-500/20">
+                        <CardContent className="py-2.5">
+                          <p className="text-[10px] text-muted-foreground">กลยุทธ์ที่แย่ที่สุด</p>
+                          <p className="text-sm font-semibold text-red-500">{allBtResults[allBtResults.length - 1].name}</p>
+                          <p className="text-xs tabular-nums text-red-500">{allBtResults[allBtResults.length - 1].result.totalPnlPct.toFixed(2)}%</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ═══ BACKTEST 1 : Indicator ═══ */}
         {klines.length > 0 && (
           <Card size="sm">
             <CardHeader className="border-b">
