@@ -16,8 +16,8 @@ async function safeJson(res: Response) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const apiKey = body.apiKey || process.env.BINANCE_API_KEY;
-  const secretKey = body.secretKey || process.env.BINANCE_SECRET_KEY;
+  const apiKey = body.apiKey;
+  const secretKey = body.secretKey;
 
   if (!apiKey || !secretKey) {
     return NextResponse.json(

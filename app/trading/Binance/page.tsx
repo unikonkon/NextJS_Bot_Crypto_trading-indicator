@@ -86,7 +86,7 @@ interface OrderResult {
   details?: { msg: string; code: number };
 }
 
-type ConnectionSource = "env" | "manual" | null;
+type ConnectionSource = "manual" | null;
 
 // ─── Component ────────────────────────────────────────────────
 export default function BinanceTradingPage() {
@@ -132,14 +132,11 @@ export default function BinanceTradingPage() {
 
   // ─── Helpers ──────────────────────────────────────────────
   const getCredentials = useCallback(() => {
-    if (connectionSource === "manual") {
-      return {
-        apiKey: manualApiKey,
-        secretKey: manualSecretKey,
-      };
-    }
-    return {};
-  }, [connectionSource, manualApiKey, manualSecretKey]);
+    return {
+      apiKey: manualApiKey,
+      secretKey: manualSecretKey,
+    };
+  }, [manualApiKey, manualSecretKey]);
 
   // ─── Check IP ─────────────────────────────────────────────
   const checkIp = async () => {
@@ -174,26 +171,19 @@ export default function BinanceTradingPage() {
   };
 
   // ─── Connect wallet ───────────────────────────────────────
-  const connectWallet = async (source: "env" | "manual") => {
+  const connectWallet = async () => {
+    if (!manualApiKey || !manualSecretKey) {
+      setConnectionError("กรุณากรอก API Key และ Secret Key");
+      return;
+    }
     setConnecting(true);
     setConnectionError("");
-
-    const body: Record<string, string> = {};
-    if (source === "manual") {
-      if (!manualApiKey || !manualSecretKey) {
-        setConnectionError("กรุณากรอก API Key และ Secret Key");
-        setConnecting(false);
-        return;
-      }
-      body.apiKey = manualApiKey;
-      body.secretKey = manualSecretKey;
-    }
 
     try {
       const res = await fetch("/api/binance/account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ apiKey: manualApiKey, secretKey: manualSecretKey }),
       });
       const data = await res.json();
 
@@ -208,7 +198,7 @@ export default function BinanceTradingPage() {
       setBalances(data.balances || []);
       setPermissions(data.permissions || []);
       setConnected(true);
-      setConnectionSource(source);
+      setConnectionSource("manual");
     } catch {
       setConnectionError("ไม่สามารถเชื่อมต่อ Binance API ได้");
     } finally {
@@ -351,9 +341,9 @@ export default function BinanceTradingPage() {
               <Button variant="outline" size="sm">
                 <Link
                   href={`/trading/LiveTrading?apiKey=${encodeURIComponent(
-                    connectionSource === "manual" ? manualApiKey : "__env__"
+                    manualApiKey
                   )}&secretKey=${encodeURIComponent(
-                    connectionSource === "manual" ? manualSecretKey : "__env__"
+                    manualSecretKey
                   )}`}
                   className="flex items-center gap-1"
                 >
@@ -367,7 +357,7 @@ export default function BinanceTradingPage() {
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="gap-1">
                 <span className="size-1.5 rounded-full bg-green-500 animate-pulse" />
-                {connectionSource === "env" ? "ENV Key" : "Manual Key"}
+                เชื่อมต่อแล้ว
               </Badge>
               <Button variant="ghost" size="icon-sm" onClick={disconnect}>
                 <LinkBreakIcon weight="bold" />
@@ -385,7 +375,7 @@ export default function BinanceTradingPage() {
                 เชื่อมต่อกระเป๋า Binance
               </CardTitle>
               <CardDescription>
-                เลือกวิธีเชื่อมต่อ: ใช้ API Key จาก env หรือกรอก Key เอง (Update เชื่อมต่อ: 2026-04-02)
+                กรอก API Key และ Secret Key จาก Binance เพื่อเชื่อมต่อกระเป๋า
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -634,83 +624,51 @@ export default function BinanceTradingPage() {
                 )}
               </div>
 
-              <Tabs defaultValue="env">
-                <TabsList>
-                  <TabsTrigger value="env">ใช้ env จากการ build</TabsTrigger>
-                  <TabsTrigger value="manual">กรอก Key เอง</TabsTrigger>
-                </TabsList>
-
-                {/* ENV connect */}
-                <TabsContent value="env">
-                  <div className="space-y-3 pt-3">
-                    <p className="text-xs text-muted-foreground">
-                      ใช้ BINANCE_API_KEY และ BINANCE_SECRET_KEY ที่ตั้งค่าไว้ใน
-                      env
-                    </p>
-                    <Button
-                      onClick={() => connectWallet("env")}
-                      disabled={connecting}
-                      className="w-full"
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">API Key</label>
+                  <Input
+                    placeholder="กรอก Binance API Key"
+                    value={manualApiKey}
+                    onChange={(e) => setManualApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Secret Key</label>
+                  <div className="relative">
+                    <Input
+                      type={showSecret ? "text" : "password"}
+                      placeholder="กรอก Binance Secret Key"
+                      value={manualSecretKey}
+                      onChange={(e) => setManualSecretKey(e.target.value)}
+                      className="pr-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecret(!showSecret)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
-                      {connecting ? (
-                        <SpinnerIcon className="size-4 animate-spin" />
+                      {showSecret ? (
+                        <EyeSlashIcon className="size-4" />
                       ) : (
-                        <LinkSimpleIcon weight="bold" className="size-4" />
+                        <EyeIcon className="size-4" />
                       )}
-                      เชื่อมต่อจาก ENV
-                    </Button>
+                    </button>
                   </div>
-                </TabsContent>
-
-                {/* Manual connect */}
-                <TabsContent value="manual">
-                  <div className="space-y-3 pt-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium">API Key</label>
-                      <Input
-                        placeholder="กรอก Binance API Key"
-                        value={manualApiKey}
-                        onChange={(e) => setManualApiKey(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium">Secret Key</label>
-                      <div className="relative">
-                        <Input
-                          type={showSecret ? "text" : "password"}
-                          placeholder="กรอก Binance Secret Key"
-                          value={manualSecretKey}
-                          onChange={(e) => setManualSecretKey(e.target.value)}
-                          className="pr-8"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowSecret(!showSecret)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {showSecret ? (
-                            <EyeSlashIcon className="size-4" />
-                          ) : (
-                            <EyeIcon className="size-4" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => connectWallet("manual")}
-                      disabled={connecting}
-                      className="w-full"
-                    >
-                      {connecting ? (
-                        <SpinnerIcon className="size-4 animate-spin" />
-                      ) : (
-                        <LinkSimpleIcon weight="bold" className="size-4" />
-                      )}
-                      เชื่อมต่อ
-                    </Button>
-                  </div>
-                </TabsContent>
-              </Tabs>
+                </div>
+                <Button
+                  onClick={connectWallet}
+                  disabled={connecting}
+                  className="w-full"
+                >
+                  {connecting ? (
+                    <SpinnerIcon className="size-4 animate-spin" />
+                  ) : (
+                    <LinkSimpleIcon weight="bold" className="size-4" />
+                  )}
+                  เชื่อมต่อ
+                </Button>
+              </div>
 
               {connectionError && (
                 <div className="flex items-center gap-2 rounded-none border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">

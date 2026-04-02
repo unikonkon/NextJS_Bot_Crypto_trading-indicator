@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { symbol, orderId, apiKey, secretKey } = body;
 
-  const key = apiKey || process.env.BINANCE_API_KEY;
-  const secret = secretKey || process.env.BINANCE_SECRET_KEY;
+  const key = apiKey;
+  const secret = secretKey;
 
   if (!key || !secret) {
     return NextResponse.json(

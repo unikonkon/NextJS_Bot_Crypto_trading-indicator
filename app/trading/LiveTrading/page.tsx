@@ -107,11 +107,9 @@ function LiveTradingContent() {
   const searchParams = useSearchParams();
 
   // Credentials จาก searchParams (ไม่เก็บลง localStorage)
-  // "__env__" = ใช้ key จาก env variables บนเซิร์ฟเวอร์
   const [apiKey] = useState(() => searchParams?.get("apiKey") ?? "");
   const [secretKey] = useState(() => searchParams?.get("secretKey") ?? "");
-  const isEnvKey = apiKey === "__env__" && secretKey === "__env__";
-  const hasCredentials = isEnvKey || !!(apiKey && secretKey);
+  const hasCredentials = !!(apiKey && secretKey);
 
   // Control state
   const [symbol, setSymbol] = useState("BTCUSDT");
@@ -169,15 +167,10 @@ function LiveTradingContent() {
     if (!hasCredentials) return;
     setLoadingBalance(true);
     try {
-      const body: Record<string, string> = {};
-      if (!isEnvKey) {
-        body.apiKey = apiKey;
-        body.secretKey = secretKey;
-      }
       const res = await fetch("/api/binance/account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ apiKey, secretKey }),
       });
       const data = await res.json();
       if (res.ok && Array.isArray(data.balances)) {
@@ -193,7 +186,7 @@ function LiveTradingContent() {
     } finally {
       setLoadingBalance(false);
     }
-  }, [hasCredentials, isEnvKey, apiKey, secretKey]);
+  }, [hasCredentials, apiKey, secretKey]);
 
   // Fetch balance on mount
   useEffect(() => {
@@ -288,17 +281,14 @@ function LiveTradingContent() {
 
       try {
         const orderBody: Record<string, string | boolean> = {
+          apiKey,
+          secretKey,
           symbol,
           side,
           type: "MARKET",
           quoteOrderQty: usdtAmount, // ส่งเป็นจำนวน USDT
           testOrder: isTestMode,
         };
-        // ถ้าไม่ใช่ env key ให้ส่ง credentials ไปด้วย
-        if (!isEnvKey) {
-          orderBody.apiKey = apiKey;
-          orderBody.secretKey = secretKey;
-        }
         const res = await fetch("/api/binance/order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -334,7 +324,7 @@ function LiveTradingContent() {
 
       setTrades(prev => [trade, ...prev]);
     },
-    [apiKey, secretKey, isEnvKey, symbol, usdtAmount, strategyId, isTestMode, hasCredentials, fetchUsdtBalance]
+    [apiKey, secretKey, symbol, usdtAmount, strategyId, isTestMode, hasCredentials, fetchUsdtBalance]
   );
 
   // ─── Live polling cycle ────────────────────────────────────
