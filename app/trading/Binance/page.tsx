@@ -43,6 +43,8 @@ import {
   ArrowsClockwiseIcon,
   TrashIcon,
   TestTubeIcon,
+  GlobeIcon,
+  CopyIcon,
 } from "@phosphor-icons/react";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -80,6 +82,11 @@ type ConnectionSource = "env" | "manual" | null;
 
 // ─── Component ────────────────────────────────────────────────
 export default function BinanceTradingPage() {
+  // IP check state
+  const [myIp, setMyIp] = useState("");
+  const [loadingIp, setLoadingIp] = useState(false);
+  const [ipCopied, setIpCopied] = useState(false);
+
   // Connection state
   const [connected, setConnected] = useState(false);
   const [connectionSource, setConnectionSource] =
@@ -120,6 +127,26 @@ export default function BinanceTradingPage() {
     }
     return {};
   }, [connectionSource, manualApiKey, manualSecretKey]);
+
+  // ─── Check IP ─────────────────────────────────────────────
+  const checkIp = async () => {
+    setLoadingIp(true);
+    try {
+      const res = await fetch("https://api.ipify.org?format=json");
+      const data = await res.json();
+      setMyIp(data.ip);
+    } catch {
+      setMyIp("ไม่สามารถดึง IP ได้");
+    } finally {
+      setLoadingIp(false);
+    }
+  };
+
+  const copyIp = () => {
+    navigator.clipboard.writeText(myIp);
+    setIpCopied(true);
+    setTimeout(() => setIpCopied(false), 2000);
+  };
 
   // ─── Connect wallet ───────────────────────────────────────
   const connectWallet = async (source: "env" | "manual") => {
@@ -319,6 +346,42 @@ export default function BinanceTradingPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* IP Check */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={checkIp}
+                  disabled={loadingIp}
+                >
+                  {loadingIp ? (
+                    <SpinnerIcon className="size-3.5 animate-spin" />
+                  ) : (
+                    <GlobeIcon weight="duotone" className="size-3.5" />
+                  )}
+                  ดู IP ของฉัน
+                </Button>
+                {myIp && (
+                  <div className="flex items-center gap-1.5">
+                    <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono">
+                      {myIp}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={copyIp}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="คัดลอก IP"
+                    >
+                      {ipCopied ? (
+                        <CheckCircleIcon weight="bold" className="size-3.5 text-green-500" />
+                      ) : (
+                        <CopyIcon weight="bold" className="size-3.5" />
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <Tabs defaultValue="env">
                 <TabsList>
                   <TabsTrigger value="env">ใช้ .env.local</TabsTrigger>
