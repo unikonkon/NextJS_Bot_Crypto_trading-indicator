@@ -584,7 +584,7 @@ export default function LiveTradingPage() {
                   <label className="text-xs font-medium text-muted-foreground">Strategy</label>
                   <Select value={strategyId} onValueChange={v => { if (v) setStrategyId(v as StrategyId); if (isRunning) stopTrading(); }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="w-[270px]">
                       {STRATEGIES.map(s => (
                         <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                       ))}
@@ -672,7 +672,7 @@ export default function LiveTradingPage() {
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="w-[230px]">
                       <SelectItem value="test">
                         Test Mode (ไม่ส่ง Order จริง)
                       </SelectItem>
@@ -681,6 +681,11 @@ export default function LiveTradingPage() {
                       </SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    {isTestMode
+                      ? "ส่งสัญญาณอย่างเดียว — Binance ตรวจสอบคำสั่งแต่ไม่ส่ง Order จริง ไม่มีการซื้อขายเกิดขึ้น"
+                      : "ส่งคำสั่งซื้อขายจริงไปยัง Binance — มีการใช้เงินจริง!"}
+                  </p>
                 </div>
 
                 {/* Preview */}
