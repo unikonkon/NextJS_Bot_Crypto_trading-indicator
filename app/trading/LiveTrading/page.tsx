@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +92,18 @@ interface LiveTrade {
 
 // ─── Component ────────────────────────────────────────────────
 export default function LiveTradingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">กำลังโหลด...</p>
+      </div>
+    }>
+      <LiveTradingContent />
+    </Suspense>
+  );
+}
+
+function LiveTradingContent() {
   const searchParams = useSearchParams();
 
   // Credentials จาก searchParams (ไม่เก็บลง localStorage)
