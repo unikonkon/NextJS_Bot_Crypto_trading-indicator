@@ -45,7 +45,14 @@ import {
   TestTubeIcon,
   GlobeIcon,
   CopyIcon,
+  CaretDownIcon,
+  CaretUpIcon,
+  KeyIcon,
+  ShieldCheckIcon,
+  LockIcon,
 } from "@phosphor-icons/react";
+import Link from "next/link";
+import Image from "next/image";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Balance {
@@ -82,6 +89,9 @@ type ConnectionSource = "env" | "manual" | null;
 
 // ─── Component ────────────────────────────────────────────────
 export default function BinanceTradingPage() {
+  // Setup guide state
+  const [showGuide, setShowGuide] = useState(false);
+
   // IP check state
   const [myIp, setMyIp] = useState("");
   const [loadingIp, setLoadingIp] = useState(false);
@@ -319,6 +329,9 @@ export default function BinanceTradingPage() {
           <div className="flex items-center gap-2">
             <WalletIcon className="size-5 text-primary" weight="duotone" />
             <h1 className="text-lg font-semibold">Binance Trading</h1>
+            <Button variant="outline" size="sm">
+              <Link href="/klines">Back Test</Link>
+            </Button>
           </div>
           {connected && (
             <div className="flex items-center gap-2">
@@ -346,6 +359,169 @@ export default function BinanceTradingPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Setup Guide */}
+              <div className="rounded-md border border-yellow-500/30 bg-yellow-500/5">
+                <button
+                  type="button"
+                  onClick={() => setShowGuide(!showGuide)}
+                  className="flex w-full items-center justify-between p-3 text-left"
+                >
+                  <div className="flex items-center gap-2 text-sm font-medium text-yellow-500">
+                    <KeyIcon weight="duotone" className="size-4" />
+                    ขั้นตอนการสร้าง API Key จาก Binance
+                  </div>
+                  {showGuide ? (
+                    <CaretUpIcon className="size-4 text-yellow-500" />
+                  ) : (
+                    <CaretDownIcon className="size-4 text-yellow-500" />
+                  )}
+                </button>
+
+                {showGuide && (
+                  <div className="space-y-4 border-t border-yellow-500/20 p-4">
+                    {/* Link to Binance API Management */}
+                    <a
+                      href="https://www.binance.com/en/my/settings/api-management"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs font-medium text-yellow-500 hover:bg-yellow-500/20 transition-colors w-fit"
+                    >
+                      <KeyIcon weight="bold" className="size-3.5" />
+                      ไปหน้าสร้าง API Key ที่ Binance
+                      <LinkSimpleIcon weight="bold" className="size-3.5" />
+                    </a>
+
+                    {/* Step 1: Choose API Key type */}
+                    <div className="space-y-2">
+                      <h3 className="flex items-center gap-1.5 text-xs font-semibold">
+                        <Badge variant="outline" className="size-5 justify-center rounded-full text-[10px]">1</Badge>
+                        Choose API Key type — เลือก System generated
+                      </h3>
+                      <p className="text-xs text-muted-foreground pl-7">
+                        ใช้ HMAC symmetric encryption — Binance จะสร้าง API Key และ Secret Key ให้อัตโนมัติ
+                        เก็บ Key เหล่านี้ให้ปลอดภัยเหมือนรหัสผ่าน อย่าแชร์ให้บุคคลที่สาม
+                      </p>
+                      <div className="pl-7">
+                        <Image
+                          src="/trading/Binance/set.png"
+                          alt="Choose API Key type - System generated"
+                          width={480}
+                          height={480}
+                          className="rounded-md border"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Step 2: API restrictions */}
+                    <div className="space-y-2">
+                      <h3 className="flex items-center gap-1.5 text-xs font-semibold">
+                        <Badge variant="outline" className="size-5 justify-center rounded-full text-[10px]">2</Badge>
+                        ตั้งค่า API restrictions
+                      </h3>
+                      <div className="pl-7 space-y-2">
+                        <div className="grid gap-1.5 text-xs">
+                          <div className="flex items-start gap-2">
+                            <ShieldCheckIcon weight="duotone" className="size-4 text-green-500 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-medium">Enable Reading</span>
+                              <Badge variant="secondary" className="text-[10px] ml-1.5">แนะนำ</Badge>
+                              <p className="text-muted-foreground mt-0.5">ดูข้อมูลบัญชี ยอดคงเหลือ และประวัติการเทรด</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <ShieldCheckIcon weight="duotone" className="size-4 text-green-500 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-medium">Enable Spot & Margin Trading</span>
+                              <Badge variant="secondary" className="text-[10px] ml-1.5">สำหรับเทรด</Badge>
+                              <p className="text-muted-foreground mt-0.5">ส่งคำสั่งซื้อ/ขาย Spot และ Margin ได้</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Enable Margin Loan, Repay & Transfer</span>
+                              <p className="mt-0.5">กู้ยืม ชำระคืน และโอนเงิน Margin</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Enable Futures</span>
+                              <p className="mt-0.5">เทรดสัญญา Futures (USDⓈ-M / COIN-M)</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Enable Internal Transfer</span>
+                              <p className="mt-0.5">โอนสินทรัพย์ระหว่างบัญชีภายใน เช่น Spot ↔ Futures</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Permits Universal Transfer</span>
+                              <p className="mt-0.5">โอนสินทรัพย์ข้ามบัญชีทุกประเภท (Spot, Margin, Futures, Funding ฯลฯ)</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Enable Withdrawals</span>
+                              <p className="mt-0.5">ถอนสินทรัพย์ออกจาก Binance ไปยังกระเป๋าภายนอก</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Enable European Options</span>
+                              <p className="mt-0.5">เทรดออปชัน (European-style Options)</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <ShieldCheckIcon weight="duotone" className="size-4 shrink-0 mt-0.5" />
+                            <div>
+                              <span>Enable Symbol Whitelist</span>
+                              <p className="mt-0.5">จำกัดให้ API เทรดได้เฉพาะคู่เหรียญที่กำหนดเท่านั้น</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3: IP access restrictions */}
+                    <div className="space-y-2">
+                      <h3 className="flex items-center gap-1.5 text-xs font-semibold">
+                        <Badge variant="outline" className="size-5 justify-center rounded-full text-[10px]">3</Badge>
+                        ตั้งค่า IP access restrictions
+                      </h3>
+                      <div className="pl-7 space-y-2">
+                        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs">
+                          <div className="flex items-center gap-2 font-medium text-destructive">
+                            <WarningIcon weight="bold" className="size-3.5 shrink-0" />
+                            Unrestricted (Less Secure)
+                          </div>
+                          <p className="mt-1 text-muted-foreground pl-5.5">
+                            API Key สามารถเข้าถึงจาก IP ใดก็ได้ — ไม่แนะนำ
+                            หากไม่จำกัด IP และเปิดสิทธิ์อื่นนอกจาก Reading API Key จะถูกลบอัตโนมัติ
+                          </p>
+                        </div>
+                        <div className="rounded-md border border-green-500/30 bg-green-500/5 p-2.5 text-xs">
+                          <div className="flex items-center gap-2 font-medium text-green-500">
+                            <LockIcon weight="bold" className="size-3.5 shrink-0" />
+                            Restrict access to trusted IPs only (Recommended)
+                            <Badge variant="secondary" className="text-[10px]">แนะนำ</Badge>
+                          </div>
+                          <p className="mt-1 text-muted-foreground pl-5.5">
+                            จำกัดเฉพาะ IP ที่เชื่อถือได้เท่านั้น — ใช้ปุ่ม &quot;ดู IP ของฉัน&quot; ด้านล่างเพื่อดู IP ของคุณ
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* IP Check */}
               <div className="flex items-center gap-2">
                 <Button

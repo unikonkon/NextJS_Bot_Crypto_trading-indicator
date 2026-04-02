@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import KlineGraph from "@/app/klines/ui/graph";
 import { ThemeToggle } from "@/components/theme-toggle";
+import Link from "next/link";
 
 // ─── Constants ─────────────────────────────────────────────────
 const POPULAR_SYMBOLS = [
@@ -489,10 +490,16 @@ export default function KlinesPage() {
       <div className="mx-auto max-w-[1400px] px-4 py-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">Binance Klines & Backtest</h1>
-            <p className="text-xs text-muted-foreground">ตัวชี้วัดการเทรด + ทดสอบกลยุทธ์ย้อนหลังพร้อมกำไร/ขาดทุน</p>
+          <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">Binance Klines & Backtest</h1>
+              <p className="text-xs text-muted-foreground">ตัวชี้วัดการเทรด + ทดสอบกลยุทธ์ย้อนหลังพร้อมกำไร/ขาดทุน</p>
+            </div>
+            <Button variant="outline" size="sm" className="border border-yellow-500/30 bg-yellow-500/10 text-[11px] font-medium text-yellow-500 hover:bg-yellow-500/20">
+              <Link href="/trading/Binance">Binance Trading</Link>
+            </Button>
           </div>
+
           <div className="flex items-center gap-2">
             {lastFetch && (
               <Badge variant="outline" className="text-[10px] text-muted-foreground">
