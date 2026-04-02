@@ -95,8 +95,10 @@ export default function BinanceTradingPage() {
 
   // IP check state
   const [myIp, setMyIp] = useState("");
+  const [serverIp, setServerIp] = useState("");
   const [loadingIp, setLoadingIp] = useState(false);
   const [ipCopied, setIpCopied] = useState(false);
+  const [serverIpCopied, setServerIpCopied] = useState(false);
 
   // Connection state
   const [connected, setConnected] = useState(false);
@@ -143,20 +145,32 @@ export default function BinanceTradingPage() {
   const checkIp = async () => {
     setLoadingIp(true);
     try {
-      const res = await fetch("https://api.ipify.org?format=json");
-      const data = await res.json();
-      setMyIp(data.ip);
+      // ดึง Client IP
+      const clientRes = await fetch("https://api.ipify.org?format=json");
+      const clientData = await clientRes.json();
+      setMyIp(clientData.ip);
+
+      // ดึง Server IP (IP ที่ Binance เห็นจริง)
+      const serverRes = await fetch("/api/server-ip");
+      const serverData = await serverRes.json();
+      setServerIp(serverData.serverIp || "ไม่สามารถดึงได้");
     } catch {
       setMyIp("ไม่สามารถดึง IP ได้");
+      setServerIp("ไม่สามารถดึง IP ได้");
     } finally {
       setLoadingIp(false);
     }
   };
 
-  const copyIp = () => {
-    navigator.clipboard.writeText(myIp);
-    setIpCopied(true);
-    setTimeout(() => setIpCopied(false), 2000);
+  const copyIp = (ip: string, type: "client" | "server") => {
+    navigator.clipboard.writeText(ip);
+    if (type === "client") {
+      setIpCopied(true);
+      setTimeout(() => setIpCopied(false), 2000);
+    } else {
+      setServerIpCopied(true);
+      setTimeout(() => setServerIpCopied(false), 2000);
+    }
   };
 
   // ─── Connect wallet ───────────────────────────────────────
@@ -539,7 +553,7 @@ export default function BinanceTradingPage() {
               </div>
 
               {/* IP Check */}
-              <div className="flex items-center gap-2">
+              <div className="space-y-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -551,25 +565,71 @@ export default function BinanceTradingPage() {
                   ) : (
                     <GlobeIcon weight="duotone" className="size-3.5" />
                   )}
-                  ดู IP ของฉัน
+                  ดู IP
                 </Button>
-                {myIp && (
-                  <div className="flex items-center gap-1.5">
-                    <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono">
-                      {myIp}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={copyIp}
-                      className="text-muted-foreground hover:text-foreground"
-                      title="คัดลอก IP"
-                    >
-                      {ipCopied ? (
-                        <CheckCircleIcon weight="bold" className="size-3.5 text-green-500" />
-                      ) : (
-                        <CopyIcon weight="bold" className="size-3.5" />
-                      )}
-                    </button>
+                {(myIp || serverIp) && (
+                  <div className="space-y-1.5 rounded-md border p-2.5">
+                    {/* Server IP — ต้องใช้ตัวนี้ตั้งค่าที่ Binance */}
+                    {serverIp && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="text-[10px] font-semibold text-primary whitespace-nowrap">Server IP:</span>
+                          <code className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-xs font-mono font-bold text-primary">
+                            {serverIp}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => copyIp(serverIp, "server")}
+                            className="text-primary hover:text-primary/80"
+                            title="คัดลอก Server IP"
+                          >
+                            {serverIpCopied ? (
+                              <CheckCircleIcon weight="bold" className="size-3.5 text-green-500" />
+                            ) : (
+                              <CopyIcon weight="bold" className="size-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-primary font-medium">
+                      Server IP คือ IP ของ Vercel Server ที่ส่งคำสั่งไปยัง Binance จริง — ใช้ IP นี้ตั้งค่าที่ Binance API Management
+                    </p>
+                    {/* Client IP */}
+                    {myIp && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">Client IP:</span>
+                          <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground">
+                            {myIp}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => copyIp(myIp, "client")}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="คัดลอก Client IP"
+                          >
+                            {ipCopied ? (
+                              <CheckCircleIcon weight="bold" className="size-3.5 text-green-500" />
+                            ) : (
+                              <CopyIcon weight="bold" className="size-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      Client IP คือ IP ของเบราว์เซอร์คุณ — ไม่ใช่ IP ที่ Binance เห็นเมื่อส่งคำสั่ง ไม่ต้องใช้ตั้งค่าที่ Binance
+                    </p>
+                    {/* หมายเหตุ */}
+                    <div className="mt-1.5 rounded border border-yellow-500/30 bg-yellow-500/5 p-2 flex items-start gap-1.5">
+                      <WarningIcon weight="fill" className="size-3.5 text-yellow-500 mt-0.5 shrink-0" />
+                      <p className="text-[10px] text-yellow-600 dark:text-yellow-400">
+                        <strong>หมายเหตุ:</strong> Vercel Serverless อาจเปลี่ยน Server IP ได้เมื่อ deploy ใหม่
+                        หากไม่ต้องการตั้ง IP ซ้ำทุกครั้ง แนะนำให้ตั้งค่า API Key ที่ Binance เป็น
+                        <strong> Unrestricted (ไม่จำกัด IP)</strong> แทน
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
