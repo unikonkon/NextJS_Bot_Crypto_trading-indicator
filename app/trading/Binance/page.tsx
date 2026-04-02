@@ -50,6 +50,7 @@ import {
   KeyIcon,
   ShieldCheckIcon,
   LockIcon,
+  LightningIcon,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import Image from "next/image";
@@ -332,6 +333,21 @@ export default function BinanceTradingPage() {
             <Button variant="outline" size="sm">
               <Link href="/klines">Back Test</Link>
             </Button>
+            {connected && (
+              <Button variant="outline" size="sm">
+                <Link
+                  href={`/trading/LiveTrading?apiKey=${encodeURIComponent(
+                    connectionSource === "manual" ? manualApiKey : "__env__"
+                  )}&secretKey=${encodeURIComponent(
+                    connectionSource === "manual" ? manualSecretKey : "__env__"
+                  )}`}
+                  className="flex items-center gap-1"
+                >
+                  <LightningIcon weight="duotone" className="size-3.5" />
+                  Live Trading
+                </Link>
+              </Button>
+            )}
           </div>
           {connected && (
             <div className="flex items-center gap-2">

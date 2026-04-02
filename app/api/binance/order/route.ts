@@ -16,7 +16,7 @@ async function safeJson(res: Response) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { symbol, side, type, quantity, price, testOrder, apiKey, secretKey } = body;
+  const { symbol, side, type, quantity, quoteOrderQty, price, testOrder, apiKey, secretKey } = body;
 
   const key = apiKey || process.env.BINANCE_API_KEY;
   const secret = secretKey || process.env.BINANCE_SECRET_KEY;
@@ -32,14 +32,21 @@ export async function POST(request: NextRequest) {
     symbol: symbol.toUpperCase(),
     side,
     type,
-    quantity,
     timestamp: Date.now(),
     recvWindow: 5000,
   };
 
+  // MARKET order: ใช้ quoteOrderQty (จำนวน USDT) หรือ quantity (จำนวนเหรียญ)
+  if (quoteOrderQty) {
+    orderParams.quoteOrderQty = quoteOrderQty;
+  } else if (quantity) {
+    orderParams.quantity = quantity;
+  }
+
   if (type === "LIMIT") {
     orderParams.price = price;
     orderParams.timeInForce = "GTC";
+    if (quantity) orderParams.quantity = quantity;
   }
 
   const signedQuery = buildSignedParams(orderParams, secret);
