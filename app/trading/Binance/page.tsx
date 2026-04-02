@@ -355,7 +355,7 @@ export default function BinanceTradingPage() {
                 เชื่อมต่อกระเป๋า Binance
               </CardTitle>
               <CardDescription>
-                เลือกวิธีเชื่อมต่อ: ใช้ API Key จาก .env.local หรือกรอก Key เอง
+                เลือกวิธีเชื่อมต่อ: ใช้ API Key จาก env หรือกรอก Key เอง (Update เชื่อมต่อ: 2026-04-02)
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -560,7 +560,7 @@ export default function BinanceTradingPage() {
 
               <Tabs defaultValue="env">
                 <TabsList>
-                  <TabsTrigger value="env">ใช้ .env.local</TabsTrigger>
+                  <TabsTrigger value="env">ใช้ env จากการ build</TabsTrigger>
                   <TabsTrigger value="manual">กรอก Key เอง</TabsTrigger>
                 </TabsList>
 
@@ -569,7 +569,7 @@ export default function BinanceTradingPage() {
                   <div className="space-y-3 pt-3">
                     <p className="text-xs text-muted-foreground">
                       ใช้ BINANCE_API_KEY และ BINANCE_SECRET_KEY ที่ตั้งค่าไว้ใน
-                      .env.local
+                      env
                     </p>
                     <Button
                       onClick={() => connectWallet("env")}
@@ -862,11 +862,10 @@ export default function BinanceTradingPage() {
                     <Button
                       onClick={submitOrder}
                       disabled={submittingOrder || !orderQuantity}
-                      className={`w-full ${
-                        orderSide === "BUY"
+                      className={`w-full ${orderSide === "BUY"
                           ? "bg-green-600 hover:bg-green-700"
                           : "bg-red-600 hover:bg-red-700"
-                      } text-white`}
+                        } text-white`}
                     >
                       {submittingOrder ? (
                         <SpinnerIcon className="size-4 animate-spin" />
@@ -881,11 +880,10 @@ export default function BinanceTradingPage() {
                     {/* Order result */}
                     {orderResult && (
                       <div
-                        className={`rounded-none border p-3 text-xs space-y-1 ${
-                          orderResult.error
+                        className={`rounded-none border p-3 text-xs space-y-1 ${orderResult.error
                             ? "border-destructive/30 bg-destructive/5 text-destructive"
                             : "border-green-500/30 bg-green-500/5 text-green-400"
-                        }`}
+                          }`}
                       >
                         {orderResult.error ? (
                           <div className="flex items-center gap-2">
