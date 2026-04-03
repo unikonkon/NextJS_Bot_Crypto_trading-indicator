@@ -73,6 +73,20 @@ interface OpenOrder {
   time: number;
 }
 
+interface TradeHistory {
+  symbol: string;
+  id: number;
+  orderId: number;
+  price: string;
+  qty: string;
+  quoteQty: string;
+  commission: string;
+  commissionAsset: string;
+  time: number;
+  isBuyer: boolean;
+  isMaker: boolean;
+}
+
 interface OrderResult {
   symbol?: string;
   orderId?: number;
@@ -135,6 +149,13 @@ export default function BinanceTradingPage() {
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
+
+  // Trade history state
+  const [trades, setTrades] = useState<TradeHistory[]>([]);
+  const [loadingTrades, setLoadingTrades] = useState(false);
+  const [tradeSymbol, setTradeSymbol] = useState("BTCUSDT");
+  const [tradeLimit, setTradeLimit] = useState("50");
+  const [tradeError, setTradeError] = useState("");
 
   // ─── Helpers ──────────────────────────────────────────────
   const getCredentials = useCallback(() => {
@@ -331,6 +352,38 @@ export default function BinanceTradingPage() {
     }
   };
 
+  // ─── Fetch trade history ───────────────────────────────────
+  const fetchTrades = async () => {
+    if (!tradeSymbol) {
+      setTradeError("กรุณาระบุ Symbol");
+      return;
+    }
+    setLoadingTrades(true);
+    setTradeError("");
+    try {
+      const res = await fetch("/api/binance/trades", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...getCredentials(),
+          symbol: tradeSymbol,
+          limit: Number(tradeLimit) || 50,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTradeError(data.details?.msg || data.error || "ดึงประวัติไม่สำเร็จ");
+        setTrades([]);
+      } else if (Array.isArray(data)) {
+        setTrades(data);
+      }
+    } catch {
+      setTradeError("ไม่สามารถเชื่อมต่อ Binance ได้");
+    } finally {
+      setLoadingTrades(false);
+    }
+  };
+
   // ─── Disconnect ───────────────────────────────────────────
   const disconnect = () => {
     setConnected(false);
@@ -338,6 +391,7 @@ export default function BinanceTradingPage() {
     setBalances([]);
     setPermissions([]);
     setOpenOrders([]);
+    setTrades([]);
     setOrderResult(null);
     setManualApiKey("");
     setManualSecretKey("");
@@ -705,8 +759,25 @@ export default function BinanceTradingPage() {
             <Card>
               <CardHeader className="border-b">
                 <CardTitle className="flex items-center gap-2">
-                  <WalletIcon weight="duotone" className="size-4" />
-                  ยอดคงเหลือ
+                  <div className="flex items-center justify-between gap-2 w-full">
+                    <div className="flex items-center gap-2">
+                      <WalletIcon weight="duotone" className="size-4" />
+                      ยอดคงเหลือ
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={refreshBalances}
+                      disabled={loadingBalances}
+                    >
+                      {loadingBalances ? (
+                        <SpinnerIcon className="size-3.5 animate-spin" />
+                      ) : (
+                        <ArrowsClockwiseIcon className="size-3.5" />
+                      )}
+                      Refresh
+                    </Button>
+                  </div>
                 </CardTitle>
                 <div className="flex items-center gap-1.5">
                   {permissions.map((p) => (
@@ -755,19 +826,7 @@ export default function BinanceTradingPage() {
                 )}
               </CardContent>
               <CardFooter>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={refreshBalances}
-                  disabled={loadingBalances}
-                >
-                  {loadingBalances ? (
-                    <SpinnerIcon className="size-3.5 animate-spin" />
-                  ) : (
-                    <ArrowsClockwiseIcon className="size-3.5" />
-                  )}
-                  Refresh
-                </Button>
+
               </CardFooter>
             </Card>
 
@@ -776,6 +835,7 @@ export default function BinanceTradingPage() {
               <TabsList>
                 <TabsTrigger value="order">ส่ง Order</TabsTrigger>
                 <TabsTrigger value="open">Open Orders</TabsTrigger>
+                <TabsTrigger value="trades">ประวัติเทรด</TabsTrigger>
               </TabsList>
 
               {/* ─── Order Form ─────────────────────────── */}
@@ -1257,6 +1317,147 @@ export default function BinanceTradingPage() {
                           ))}
                         </TableBody>
                       </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* ─── Trade History ──────────────────────── */}
+              <TabsContent value="trades">
+                <Card>
+                  <CardContent className="pt-4 space-y-4">
+                    {/* Search controls */}
+                    <div className="flex flex-wrap items-end gap-5">
+                      <div className="space-x-1.5">
+                        <label className="text-xs font-medium">Symbol</label>
+                        <Input
+                          placeholder="BTCUSDT"
+                          value={tradeSymbol}
+                          onChange={(e) => setTradeSymbol(e.target.value.toUpperCase())}
+                          className="w-[140px]"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <label className="text-xs font-medium">จำนวน</label>
+                        <Select
+                          value={tradeLimit}
+                          onValueChange={(v) => v && setTradeLimit(v)}
+                        >
+                          <SelectTrigger className="w-[90px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="25">25</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                            <SelectItem value="500">500</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        onClick={fetchTrades}
+                        disabled={loadingTrades}
+                        size="sm"
+                      >
+                        {loadingTrades ? (
+                          <SpinnerIcon className="size-3.5 animate-spin" />
+                        ) : (
+                          <ArrowsClockwiseIcon className="size-3.5" />
+                        )}
+                        โหลดประวัติ
+                      </Button>
+                    </div>
+
+                    {/* Error */}
+                    {tradeError && (
+                      <div className="flex items-center gap-2 rounded-none border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                        <XCircleIcon weight="bold" className="size-4 shrink-0" />
+                        {tradeError}
+                      </div>
+                    )}
+
+                    {/* Results */}
+                    {trades.length === 0 && !loadingTrades && !tradeError ? (
+                      <p className="text-xs text-muted-foreground py-8 text-center">
+                        ยังไม่มีข้อมูล — เลือก Symbol แล้วกด &quot;โหลดประวัติ&quot;
+                      </p>
+                    ) : trades.length > 0 && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            {trades.length} รายการ — {tradeSymbol}
+                          </span>
+                          {/* Summary */}
+                          {(() => {
+                            const totalBuyQty = trades.filter(t => t.isBuyer).reduce((s, t) => s + parseFloat(t.quoteQty), 0);
+                            const totalSellQty = trades.filter(t => !t.isBuyer).reduce((s, t) => s + parseFloat(t.quoteQty), 0);
+                            const totalCommission = trades.reduce((s, t) => s + parseFloat(t.commission), 0);
+                            return (
+                              <div className="flex gap-3 text-[10px]">
+                                <span className="text-green-500">BUY: {totalBuyQty.toFixed(4)}</span>
+                                <span className="text-red-500">SELL: {totalSellQty.toFixed(4)}</span>
+                                <span className="text-muted-foreground">Fee: {totalCommission.toFixed(6)}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>เวลา</TableHead>
+                                <TableHead>Side</TableHead>
+                                <TableHead className="text-right">ราคา</TableHead>
+                                <TableHead className="text-right">จำนวน</TableHead>
+                                <TableHead className="text-right">มูลค่า</TableHead>
+                                <TableHead className="text-right">ค่าธรรมเนียม</TableHead>
+                                <TableHead>Role</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {trades.slice().reverse().map((t) => (
+                                <TableRow key={t.id}>
+                                  <TableCell className="text-xs whitespace-nowrap">
+                                    {new Date(t.time).toLocaleString("th-TH", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      second: "2-digit",
+                                    })}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge
+                                      variant={t.isBuyer ? "default" : "destructive"}
+                                      className={t.isBuyer ? "bg-green-600/20 text-green-400" : ""}
+                                    >
+                                      {t.isBuyer ? "BUY" : "SELL"}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono text-xs">
+                                    {t.price}
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono text-xs">
+                                    {t.qty}
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono text-xs">
+                                    {parseFloat(t.quoteQty).toFixed(4)}
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                                    {parseFloat(t.commission).toFixed(6)} {t.commissionAsset}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {t.isMaker ? "Maker" : "Taker"}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>
