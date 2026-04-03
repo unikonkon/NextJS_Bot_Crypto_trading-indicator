@@ -116,11 +116,17 @@ export default function BinanceTradingPage() {
   const [loadingBalances, setLoadingBalances] = useState(false);
 
   // Order state
-  const [orderSymbol, setOrderSymbol] = useState("BTCUSDT");
+  const [orderCoin, setOrderCoin] = useState("BTC");
+  const [orderQuote, setOrderQuote] = useState("USDT");
   const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [orderInputMode, setOrderInputMode] = useState<"qty" | "usdt">("qty");
   const [orderQuantity, setOrderQuantity] = useState("");
+  const [orderUsdtAmount, setOrderUsdtAmount] = useState("");
   const [orderPrice, setOrderPrice] = useState("");
+  const [calcPrice, setCalcPrice] = useState("");
+  const [calcUsdt, setCalcUsdt] = useState("");
+  const [showCalc, setShowCalc] = useState(false);
   const [isTestOrder, setIsTestOrder] = useState(true);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
@@ -228,23 +234,35 @@ export default function BinanceTradingPage() {
 
   // ─── Submit order ─────────────────────────────────────────
   const submitOrder = async () => {
-    if (!orderQuantity) return;
+    const isUsdtMode = orderInputMode === "usdt" && orderType === "MARKET";
+    const hasValue = isUsdtMode ? !!orderUsdtAmount : !!orderQuantity;
+    if (!hasValue) return;
     setSubmittingOrder(true);
     setOrderResult(null);
 
     try {
+      const orderPayload: Record<string, unknown> = {
+        ...getCredentials(),
+        symbol: `${orderCoin}${orderQuote}`,
+        side: orderSide,
+        type: orderType,
+        testOrder: isTestOrder,
+      };
+
+      if (isUsdtMode) {
+        orderPayload.quoteOrderQty = orderUsdtAmount;
+      } else {
+        orderPayload.quantity = orderQuantity;
+      }
+
+      if (orderType === "LIMIT") {
+        orderPayload.price = orderPrice;
+      }
+
       const res = await fetch("/api/binance/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...getCredentials(),
-          symbol: orderSymbol,
-          side: orderSide,
-          type: orderType,
-          quantity: orderQuantity,
-          price: orderType === "LIMIT" ? orderPrice : undefined,
-          testOrder: isTestOrder,
-        }),
+        body: JSON.stringify(orderPayload),
       });
       const data = await res.json();
 
@@ -257,10 +275,10 @@ export default function BinanceTradingPage() {
         if (isTestOrder && Object.keys(data).length === 0) {
           setOrderResult({
             status: "TEST_OK",
-            symbol: orderSymbol,
+            symbol: `${orderCoin}${orderQuote}`,
             side: orderSide,
             type: orderType,
-            origQty: orderQuantity,
+            origQty: isUsdtMode ? `${orderUsdtAmount} USDT` : orderQuantity,
           });
         } else {
           setOrderResult(data);
@@ -765,16 +783,39 @@ export default function BinanceTradingPage() {
                 <Card>
                   <CardContent className="space-y-4 pt-4">
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      {/* Symbol */}
+                      {/* Symbol = Coin + Quote */}
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium">Symbol</label>
-                        <Input
-                          placeholder="BTCUSDT"
-                          value={orderSymbol}
-                          onChange={(e) =>
-                            setOrderSymbol(e.target.value.toUpperCase())
-                          }
-                        />
+                        <div className="flex gap-1">
+                          <Input
+                            placeholder="BTC"
+                            value={orderCoin}
+                            onChange={(e) =>
+                              setOrderCoin(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""))
+                            }
+                            className="flex-1"
+                          />
+                          <Select
+                            value={orderQuote}
+                            onValueChange={(v) => v && setOrderQuote(v)}
+                          >
+                            <SelectTrigger className="w-[80px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="USDT">USDT</SelectItem>
+                              <SelectItem value="USDC">USDC</SelectItem>
+                              <SelectItem value="BTC">BTC</SelectItem>
+                              <SelectItem value="BNB">BNB</SelectItem>
+                              <SelectItem value="ETH">ETH</SelectItem>
+                              <SelectItem value="FDUSD">FDUSD</SelectItem>
+                              <SelectItem value="TRY">TRY</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          คู่เทรด: <span className="font-mono font-bold">{orderCoin}{orderQuote}</span>
+                        </p>
                       </div>
 
                       {/* Side */}
@@ -785,7 +826,7 @@ export default function BinanceTradingPage() {
                             variant={
                               orderSide === "BUY" ? "default" : "outline"
                             }
-                            size="sm"
+                            size="lg"
                             className={
                               orderSide === "BUY"
                                 ? "flex-1 bg-green-600 hover:bg-green-700 text-white"
@@ -800,7 +841,7 @@ export default function BinanceTradingPage() {
                             variant={
                               orderSide === "SELL" ? "default" : "outline"
                             }
-                            size="sm"
+                            size="lg"
                             className={
                               orderSide === "SELL"
                                 ? "flex-1 bg-red-600 hover:bg-red-700 text-white"
@@ -833,16 +874,64 @@ export default function BinanceTradingPage() {
                         </Select>
                       </div>
 
-                      {/* Quantity */}
+                      {/* Quantity / USDT toggle */}
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium">Quantity</label>
-                        <Input
-                          type="number"
-                          placeholder="0.001"
-                          value={orderQuantity}
-                          onChange={(e) => setOrderQuantity(e.target.value)}
-                          step="any"
-                        />
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-xs font-medium">
+                            {orderInputMode === "usdt" && orderType === "MARKET" ? "USDT" : "Quantity"}
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+
+                          {orderInputMode === "usdt" && orderType === "MARKET" ? (
+                            <Input
+                              type="number"
+                              placeholder="10"
+                              value={orderUsdtAmount}
+                              onChange={(e) => setOrderUsdtAmount(e.target.value)}
+                              step="any"
+                            />
+                          ) : (
+                            <Input
+                              type="number"
+                              placeholder="0.001"
+                              value={orderQuantity}
+                              onChange={(e) => setOrderQuantity(e.target.value)}
+                              step="any"
+                            />
+                          )}
+
+                          {orderType === "MARKET" && (
+                            <div className="flex rounded-xs border text-[14px] overflow-hidden ml-auto w-[145px] h-[33px]">
+                              <button
+                                type="button"
+                                onClick={() => setOrderInputMode("qty")}
+                                className={`px-1.5 py-0.5 transition-colors ${orderInputMode === "qty" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                              >
+                                Qty
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setOrderInputMode("usdt")}
+                                className={`px-1.5 py-0.5 transition-colors ${orderInputMode === "usdt" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                              >
+                                USDT
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {orderInputMode === "usdt" && orderType === "MARKET" && (
+                          <p className="text-[10px] text-muted-foreground">
+                            ระบุจำนวน USDT ที่ต้องการ{orderSide === "BUY" ? "ซื้อ" : "ขาย"} — ระบบคำนวณจำนวนเหรียญให้อัตโนมัติ
+                          </p>
+                        )}
+
+                        {orderInputMode === "qty" && orderType === "MARKET" && (
+                          <p className="text-[10px] text-muted-foreground">
+                            ระบุจำนวนเหรียญที่ต้องการ
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -861,6 +950,89 @@ export default function BinanceTradingPage() {
                         />
                       </div>
                     )}
+
+                    {/* USDT Calculator — optional helper */}
+                    <div className="rounded-md border border-dashed p-3 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCalc(!showCalc)}
+                        className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+                      >
+                        {showCalc ? (
+                          <CaretUpIcon className="size-3.5" />
+                        ) : (
+                          <CaretDownIcon className="size-3.5" />
+                        )}
+                        คำนวณ USDT → Quantity (เพื่อซื้อขาย)
+                      </button>
+                      {showCalc && (
+                        <div className="space-y-2 pt-1">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-muted-foreground">
+                                ราคาเหรียญ ({orderQuote})
+                              </label>
+                              <Input
+                                type="number"
+                                placeholder="0.15"
+                                value={orderType === "LIMIT" && orderPrice ? orderPrice : calcPrice}
+                                onChange={(e) => {
+                                  setCalcPrice(e.target.value);
+                                  if (calcUsdt && e.target.value && parseFloat(e.target.value) > 0) {
+                                    setOrderQuantity((parseFloat(calcUsdt) / parseFloat(e.target.value)).toFixed(8));
+                                  }
+                                }}
+                                disabled={orderType === "LIMIT" && !!orderPrice}
+                                step="any"
+                              />
+                              {orderType === "LIMIT" && orderPrice && (
+                                <p className="text-[10px] text-muted-foreground">ใช้ราคา LIMIT อัตโนมัติ</p>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-muted-foreground">
+                                จำนวน {orderQuote} ที่ต้องการใช้
+                              </label>
+                              <Input
+                                type="number"
+                                placeholder="10"
+                                value={calcUsdt}
+                                onChange={(e) => {
+                                  setCalcUsdt(e.target.value);
+                                  const price = orderType === "LIMIT" && orderPrice ? orderPrice : calcPrice;
+                                  if (price && e.target.value && parseFloat(price) > 0) {
+                                    setOrderQuantity((parseFloat(e.target.value) / parseFloat(price)).toFixed(8));
+                                  }
+                                }}
+                                step="any"
+                              />
+                            </div>
+                          </div>
+                          {orderQuantity && (calcUsdt || calcPrice) && (
+                            <div className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1.5">
+                              <CheckCircleIcon weight="bold" className="size-3.5 text-green-500 shrink-0" />
+                              <p className="text-[11px]">
+                                <span className="text-muted-foreground">Quantity =</span>{" "}
+                                <span className="font-mono font-bold">{orderQuantity}</span>{" "}
+                                <span className="text-muted-foreground">{orderCoin}</span>
+                                {(() => {
+                                  const price = orderType === "LIMIT" && orderPrice ? orderPrice : calcPrice;
+                                  if (price && orderQuantity) {
+                                    const total = parseFloat(orderQuantity) * parseFloat(price);
+                                    return (
+                                      <span className="text-muted-foreground">
+                                        {" "}≈ {total.toFixed(4)} {orderQuote}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}{" "}
+                    </div>
 
                     {/* Test order toggle */}
                     <div className="flex items-center gap-3">
@@ -895,10 +1067,10 @@ export default function BinanceTradingPage() {
                     {/* Submit */}
                     <Button
                       onClick={submitOrder}
-                      disabled={submittingOrder || !orderQuantity}
+                      disabled={submittingOrder || (orderInputMode === "usdt" && orderType === "MARKET" ? !orderUsdtAmount : !orderQuantity)}
                       className={`w-full ${orderSide === "BUY"
-                          ? "bg-green-600 hover:bg-green-700"
-                          : "bg-red-600 hover:bg-red-700"
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-red-600 hover:bg-red-700"
                         } text-white`}
                     >
                       {submittingOrder ? (
@@ -908,28 +1080,45 @@ export default function BinanceTradingPage() {
                       ) : (
                         <ArrowDownIcon weight="bold" className="size-4" />
                       )}
-                      {isTestOrder ? "Test" : ""} {orderSide} {orderSymbol}
+                      {isTestOrder ? "Test" : ""} {orderSide} {`${orderCoin}${orderQuote}`}
                     </Button>
 
                     {/* Order result */}
                     {orderResult && (
                       <div
                         className={`rounded-none border p-3 text-xs space-y-1 ${orderResult.error
-                            ? "border-destructive/30 bg-destructive/5 text-destructive"
-                            : "border-green-500/30 bg-green-500/5 text-green-400"
+                          ? "border-destructive/30 bg-destructive/5 text-destructive"
+                          : "border-green-500/30 bg-green-500/5 text-green-400"
                           }`}
                       >
                         {orderResult.error ? (
-                          <div className="flex items-center gap-2">
-                            <XCircleIcon
-                              weight="bold"
-                              className="size-4 shrink-0"
-                            />
-                            <span>{orderResult.error}</span>
-                            {orderResult.details && (
-                              <span className="text-muted-foreground">
-                                (code: {orderResult.details.code})
-                              </span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <XCircleIcon
+                                weight="bold"
+                                className="size-4 shrink-0"
+                              />
+                              <span>{orderResult.error}</span>
+                              {orderResult.details && (
+                                <span className="text-muted-foreground">
+                                  (code: {orderResult.details.code})
+                                </span>
+                              )}
+                            </div>
+                            {orderResult.details?.code === -1013 && orderResult.details?.msg?.includes("NOTIONAL") && (
+                              <p className="pl-6 text-muted-foreground">
+                                มูลค่า Order ต่ำกว่าขั้นต่ำที่ Binance กำหนด (ประมาณ 5 USDT) — ต้องเพิ่มจำนวนเหรียญหรือใช้คู่เทรดอื่น
+                              </p>
+                            )}
+                            {orderResult.details?.code === -1121 && (
+                              <p className="pl-6 text-muted-foreground">
+                                คู่เทรดไม่ถูกต้อง — ตรวจสอบชื่อเหรียญและคู่เทรดอีกครั้ง
+                              </p>
+                            )}
+                            {orderResult.details?.code === -2010 && (
+                              <p className="pl-6 text-muted-foreground">
+                                ยอดคงเหลือไม่เพียงพอ — ตรวจสอบยอดในกระเป๋า
+                              </p>
                             )}
                           </div>
                         ) : (
