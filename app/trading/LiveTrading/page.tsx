@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
+  CardAction,
 } from "@/components/ui/card";
 import {
   Select,
@@ -47,7 +48,8 @@ import Link from "next/link";
 import type { KlineData, BinanceKlineRaw, Interval } from "@/lib/types/kline";
 import { parseKline } from "@/lib/types/kline";
 import { computeAll, type AllIndicators } from "@/lib/indicators";
-import { STRATEGIES, type StrategyId } from "@/lib/backtest";
+import { runBacktest, STRATEGIES, type StrategyId, type BacktestResult, type Trade } from "@/lib/backtest";
+import { Skeleton } from "@/components/ui/skeleton";
 import KlineGraph from "@/app/klines/ui/graph";
 
 // ─── Constants ────────────────────────────────────────────────
@@ -74,6 +76,155 @@ const POLL_OPTIONS = [
   5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300,
   600, 900, 1800, 3600, 7200, 14400, 86400,
 ];
+
+const PARAM_LABELS: Record<string, string> = {
+  period: "RSI Period",
+  buyThreshold: "ซื้อเมื่อ RSI <",
+  sellThreshold: "ขายเมื่อ RSI >",
+  fastPeriod: "Fast EMA",
+  slowPeriod: "Slow EMA",
+  swingSize: "Swing Size",
+  internalSize: "Internal Size",
+  fastLength: "Fast EMA",
+  slowLength: "Slow EMA",
+  signalLength: "Signal SMA",
+  atrPeriod: "ATR Period",
+  multiplier: "ATR Multiplier",
+  bbLength: "BB Length",
+  bbMult: "BB MultFactor",
+  kcLength: "KC Length",
+  kcMult: "KC MultFactor",
+  zigzagLen: "ZigZag Length",
+  fibFactor: "Fib Factor",
+  leftBars: "Left Bars",
+  rightBars: "Right Bars",
+  volumeThresh: "Volume Threshold",
+  trendLength: "Swing Lookback",
+  trendMult: "Slope Mult",
+  keyValue: "Key Value",
+  utAtrPeriod: "ATR Period",
+};
+
+// ─── Formatting ────────────────────────────────────────────────
+function fmtNum(val: string | number, dec = 2): string {
+  const n = typeof val === "string" ? parseFloat(val) : val;
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+  return n.toFixed(dec);
+}
+function fmtPrice(val: string | number): string {
+  const n = typeof val === "string" ? parseFloat(val) : val;
+  if (n >= 1000) return n.toFixed(2);
+  if (n >= 1) return n.toFixed(4);
+  return n.toFixed(6);
+}
+function fmtDate(ts: number): string {
+  return new Date(ts).toLocaleString("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+function pnlColor(v: number): string {
+  return v > 0 ? "text-emerald-500" : v < 0 ? "text-red-500" : "text-muted-foreground";
+}
+function pnlBg(v: number): string {
+  return v > 0 ? "bg-emerald-500/10" : v < 0 ? "bg-red-500/10" : "bg-muted";
+}
+
+function StrategyDesc({ text }: { text: string }) {
+  const parts = text.split(/(Buy|Sell|ซื้อ|ขาย)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part === "Buy" || part === "ซื้อ") return <span key={i} className="text-emerald-500 font-medium">{part}</span>;
+        if (part === "Sell" || part === "ขาย") return <span key={i} className="text-red-500 font-medium">{part}</span>;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+function EquityChart({ curve, trades }: { curve: number[]; trades: Trade[] }) {
+  const step = Math.max(1, Math.floor(curve.length / 200));
+  const sampled = curve.filter((_, i) => i % step === 0 || i === curve.length - 1);
+  const max = Math.max(...sampled, 0.01);
+  const min = Math.min(...sampled, -0.01);
+  const range = max - min || 1;
+  const zeroY = ((max - 0) / range) * 100;
+
+  const tradeMarkers: { barIdx: number; pnlPct: number }[] = [];
+  for (const t of trades) {
+    const sampledIdx = Math.round(t.exitIdx / step);
+    const clampedIdx = Math.min(sampledIdx, sampled.length - 1);
+    tradeMarkers.push({ barIdx: clampedIdx, pnlPct: t.pnlPct });
+  }
+  const markerMap = new Map<number, number[]>();
+  for (const m of tradeMarkers) {
+    const arr = markerMap.get(m.barIdx) || [];
+    arr.push(m.pnlPct);
+    markerMap.set(m.barIdx, arr);
+  }
+
+  return (
+    <div className="relative h-40 w-full">
+      <div className="absolute left-0 right-0 border-t border-dashed border-muted-foreground/30" style={{ top: `${zeroY}%` }} />
+      <div className="absolute left-1 text-[9px] text-muted-foreground" style={{ top: `${Math.max(zeroY - 5, 0)}%` }}>0%</div>
+      <div className="flex h-full items-end gap-px">
+        {sampled.map((val, i) => {
+          const h = Math.abs(val) / range * 100;
+          const isPos = val >= 0;
+          const markers = markerMap.get(i);
+          return (
+            <div key={i} className="flex-1 flex flex-col justify-end h-full relative group">
+              {isPos ? (
+                <div className="w-full bg-emerald-500/60 absolute" style={{ bottom: `${100 - zeroY}%`, height: `${Math.max(h, 0.5)}%` }} />
+              ) : (
+                <div className="w-full bg-red-500/60 absolute" style={{ top: `${zeroY}%`, height: `${Math.max(h, 0.5)}%` }} />
+              )}
+              {markers && (
+                <>
+                  <div
+                    className={`absolute w-1.5 h-1.5 rounded-full left-1/2 -translate-x-1/2 z-10 ${markers[markers.length - 1] >= 0 ? "bg-emerald-400" : "bg-red-400"}`}
+                    style={{ top: isPos ? `${zeroY - (val / range) * 100 - 2}%` : `${zeroY + (Math.abs(val) / range) * 100}%` }}
+                  />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20 pointer-events-none">
+                    <div className="bg-popover border border-border rounded px-1.5 py-0.5 shadow-md whitespace-nowrap">
+                      {markers.map((pnl, mi) => (
+                        <div key={mi} className={`text-[9px] font-medium tabular-nums ${pnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
+                        </div>
+                      ))}
+                      <div className="text-[8px] text-muted-foreground tabular-nums">สะสม: {val >= 0 ? "+" : ""}{val.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="absolute top-0 right-1 text-[9px] text-emerald-500 tabular-nums">+{max.toFixed(1)}%</div>
+      <div className="absolute bottom-0 right-1 text-[9px] text-red-500 tabular-nums">{min.toFixed(1)}%</div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color = "", bg = "", size = "default" }: { label: string; value: string; color?: string; bg?: string; size?: string }) {
+  return (
+    <Card size="sm" className={bg}>
+      <CardContent className={size === "sm" ? "pt-2 pb-2" : "pt-3"}>
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className={`${size === "sm" ? "text-xs" : "text-sm"} font-semibold tabular-nums ${color}`}>{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────
 interface LiveTrade {
@@ -138,6 +289,17 @@ function LiveTradingContent() {
   // Position tracking
   const [inPosition, setInPosition] = useState(false);
   const [entryPrice, setEntryPrice] = useState<number | null>(null);
+
+  // Backtest state
+  const [strategyParams, setStrategyParams] = useState<Record<string, number>>(
+    () => ({ ...STRATEGIES.find(s => s.id === "supertrend")!.params })
+  );
+  const [feesPct, setFeesPct] = useState("0.1");
+  const [btResult, setBtResult] = useState<BacktestResult | null>(null);
+  const [btRunning, setBtRunning] = useState(false);
+  const [allBtResults, setAllBtResults] = useState<{ strategyId: StrategyId; name: string; result: BacktestResult }[] | null>(null);
+  const [allBtRunning, setAllBtRunning] = useState(false);
+  const [allBtExpanded, setAllBtExpanded] = useState<Set<StrategyId>>(new Set());
 
   // Network status
   const [isOnline, setIsOnline] = useState(true);
@@ -391,6 +553,42 @@ function LiveTradingContent() {
     }
     setLoading(false);
   };
+
+  // ─── Run Backtest ───────────────────────────────────────────
+  const runBt = useCallback(() => {
+    if (klines.length < 50) { setError("ต้องมีอย่างน้อย 50 แท่งเทียนเพื่อรัน Backtest"); return; }
+    setBtRunning(true);
+    setError("");
+    setTimeout(() => {
+      try {
+        const result = runBacktest(klines, strategyId, strategyParams, parseFloat(feesPct) || 0.1);
+        setBtResult(result);
+      } catch (err) { setError(String(err)); }
+      finally { setBtRunning(false); }
+    }, 10);
+  }, [klines, strategyId, strategyParams, feesPct]);
+
+  // ─── Run All Backtests ─────────────────────────────────────
+  const runAllBt = useCallback(() => {
+    if (klines.length < 50) { setError("ต้องมีอย่างน้อย 50 แท่งเทียนเพื่อรัน Backtest"); return; }
+    setAllBtRunning(true);
+    setError("");
+    setAllBtResults(null);
+    setTimeout(() => {
+      try {
+        const fees = parseFloat(feesPct) || 0.1;
+        const results = STRATEGIES.map(s => ({
+          strategyId: s.id,
+          name: s.name,
+          result: runBacktest(klines, s.id, { ...s.params }, fees),
+        }));
+        results.sort((a, b) => b.result.totalPnlPct - a.result.totalPnlPct);
+        setAllBtResults(results);
+        setAllBtExpanded(new Set());
+      } catch (err) { setError(String(err)); }
+      finally { setAllBtRunning(false); }
+    }, 10);
+  }, [klines, feesPct]);
 
   // ─── Stats ─────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -791,49 +989,6 @@ function LiveTradingContent() {
           </div>
         )}
 
-        {/* Chart */}
-        {klines.length > 0 && (
-          <Card>
-            <CardContent className="p-2">
-              <KlineGraph
-                klines={klines}
-                indicators={indicators}
-                btResult={null}
-                strategyId={strategyId}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Stats */}
-        {trades.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Card>
-              <CardContent className="p-3 text-center">
-                <p className="text-[10px] text-muted-foreground">Orders ทั้งหมด</p>
-                <p className="text-lg font-bold">{trades.length}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 text-center">
-                <p className="text-[10px] text-muted-foreground">BUY สำเร็จ</p>
-                <p className="text-lg font-bold text-green-600">{stats.buys}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 text-center">
-                <p className="text-[10px] text-muted-foreground">SELL สำเร็จ</p>
-                <p className="text-lg font-bold text-red-500">{stats.sells}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 text-center">
-                <p className="text-[10px] text-muted-foreground">ล้มเหลว</p>
-                <p className="text-lg font-bold text-yellow-500">{stats.failed}</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
 
         {/* Trade History */}
         {hasCredentials && (
@@ -931,7 +1086,640 @@ function LiveTradingContent() {
             </CardContent>
           </Card>
         )}
+
+        {/* Chart */}
+        {klines.length > 0 && (
+          <Card>
+            <CardContent className="p-2">
+              <KlineGraph
+                klines={klines}
+                indicators={indicators}
+                btResult={btResult}
+                strategyId={strategyId}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ═══ BACKTEST All Indicator and Strategy ═══ */}
+        {klines.length > 0 && (
+          <Card size="sm">
+            <CardHeader className="border-b">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>ทดสอบกลยุทธ์ย้อนหลัง ทุก Indicator</CardTitle>
+                  <CardDescription>รันทุกกลยุทธ์ ({STRATEGIES.length} ตัว) บนข้อมูล {klines.length.toLocaleString()} แท่งเทียน — เรียงตามกำไรสูงสุด</CardDescription>
+                </div>
+                <Button onClick={runAllBt} disabled={allBtRunning || klines.length < 50} className="h-9 shrink-0">
+                  {allBtRunning ? "กำลังรัน..." : "รัน Backtest ทั้งหมด"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-3">
+              {!allBtResults && !allBtRunning && (
+                <p className="text-xs text-muted-foreground text-center py-6">กดปุ่ม &quot;รัน Backtest ทั้งหมด&quot; เพื่อเปรียบเทียบทุกกลยุท��์</p>
+              )}
+              {allBtRunning && (
+                <div className="space-y-2 py-4">
+                  {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                </div>
+              )}
+              {allBtResults && (
+                <div className="space-y-2">
+                  {/* Summary table */}
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-8 text-center">#</TableHead>
+                          <TableHead>กลยุทธ์</TableHead>
+                          <TableHead className="text-right">กำไร/ขาดทุน</TableHead>
+                          <TableHead className="text-right">อัตราชนะ</TableHead>
+                          <TableHead className="text-right">จำนวนเทรด</TableHead>
+                          <TableHead className="text-right">Drawdown</TableHead>
+                          <TableHead className="text-right">Profit Factor</TableHead>
+                          <TableHead className="text-right">Sharpe</TableHead>
+                          <TableHead className="text-right">vs ซื้อถือ</TableHead>
+                          <TableHead className="w-10"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {allBtResults.map((item, idx) => {
+                          const r = item.result;
+                          const isExpanded = allBtExpanded.has(item.strategyId);
+                          const diff = r.totalPnlPct - r.buyAndHoldPct;
+                          return (
+                            <React.Fragment key={item.strategyId}>
+                              <TableRow
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => setAllBtExpanded(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.strategyId)) next.delete(item.strategyId);
+                                  else next.add(item.strategyId);
+                                  return next;
+                                })}
+                              >
+                                <TableCell className="text-center text-muted-foreground text-xs">{idx + 1}</TableCell>
+                                <TableCell className="font-medium text-xs">{item.name}</TableCell>
+                                <TableCell className={`text-right tabular-nums font-semibold ${pnlColor(r.totalPnlPct)}`}>
+                                  {r.totalPnlPct >= 0 ? "+" : ""}{r.totalPnlPct.toFixed(2)}%
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs ${r.winRate >= 50 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {r.winRate.toFixed(1)}%
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums text-xs">
+                                  {r.totalTrades} <span className="text-muted-foreground">({r.wins}W/{r.losses}L)</span>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums text-xs text-red-500">
+                                  -{r.maxDrawdownPct.toFixed(2)}%
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs ${r.profitFactor > 1 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {r.profitFactor === Infinity ? "INF" : r.profitFactor.toFixed(2)}
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs ${r.sharpeRatio > 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {r.sharpeRatio.toFixed(3)}
+                                </TableCell>
+                                <TableCell className={`text-right tabular-nums text-xs font-medium ${diff >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                  {diff >= 0 ? "+" : ""}{diff.toFixed(2)}%
+                                </TableCell>
+                                <TableCell className="text-center text-muted-foreground text-xs">
+                                  {isExpanded ? "▲" : "▼"}
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded && (
+                                <TableRow>
+                                  <TableCell colSpan={10} className="p-0">
+                                    <div className="border-t bg-muted/20 px-4 py-3 space-y-3">
+                                      {(() => {
+                                        const strat = STRATEGIES.find(s => s.id === item.strategyId);
+                                        if (!strat) return null;
+                                        return (
+                                          <div className="space-y-0.5 mb-2">
+                                            <p className="text-[10px] text-muted-foreground"><StrategyDesc text={strat.descriptionEn} /></p>
+                                            <p className="text-[10px] text-muted-foreground"><StrategyDesc text={strat.descriptionTh} /></p>
+                                          </div>
+                                        );
+                                      })()}
+                                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                        <StatCard label="กำไรเฉลี่ย" value={`+${r.avgWinPct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+                                        <StatCard label="ขาดทุนเ���ลี่ย" value={`${r.avgLossPct.toFixed(2)}%`} color="text-red-500" size="sm" />
+                                        <StatCard label="เทรดที่ดีที่สุด" value={`+${r.bestTradePct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+                                        <StatCard label="เทรดที่แย่ที่สุด" value={`${r.worstTradePct.toFixed(2)}%`} color="text-red-500" size="sm" />
+                                      </div>
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <StatCard label="แท่งเทียนถือเฉลี��ย" value={`${r.avgBarsHeld.toFixed(1)}`} size="sm" />
+                                        <StatCard label="ซื้อแล้วถือ" value={`${r.buyAndHoldPct >= 0 ? "+" : ""}${r.buyAndHoldPct.toFixed(2)}%`} color={pnlColor(r.buyAndHoldPct)} size="sm" />
+                                        <StatCard label={diff >= 0 ? "กลยุทธ์ชนะซื้อถือ" : "ซื้อถือชนะกลยุทธ์"} value={`${diff >= 0 ? "+" : ""}${diff.toFixed(2)}%`} color={diff >= 0 ? "text-emerald-500" : "text-red-500"} size="sm" />
+                                      </div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {r.trades.map((t, i) => (
+                                          <span
+                                            key={i}
+                                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${t.pnlPct >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}
+                                          >
+                                            #{i + 1} {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Best vs Worst summary */}
+                  {allBtResults.length >= 2 && (
+                    <div className="flex gap-3">
+                      <Card size="sm" className="flex-1 ring-emerald-500/20">
+                        <CardContent className="py-2.5">
+                          <p className="text-[10px] text-muted-foreground">กลยุทธ์��ี่ดีที่สุ���</p>
+                          <p className="text-sm font-semibold text-emerald-500">{allBtResults[0].name}</p>
+                          <p className="text-xs tabular-nums text-emerald-500">+{allBtResults[0].result.totalPnlPct.toFixed(2)}%</p>
+                        </CardContent>
+                      </Card>
+                      <Card size="sm" className="flex-1 ring-red-500/20">
+                        <CardContent className="py-2.5">
+                          <p className="text-[10px] text-muted-foreground">กล���ุทธ์ที่แย่ที่สุด</p>
+                          <p className="text-sm font-semibold text-red-500">{allBtResults[allBtResults.length - 1].name}</p>
+                          <p className="text-xs tabular-nums text-red-500">{allBtResults[allBtResults.length - 1].result.totalPnlPct.toFixed(2)}%</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ═══ BACKTEST 1 : Indicator ═══ */}
+        {klines.length > 0 && (
+          <Card size="sm">
+            <CardHeader className="border-b">
+              <CardTitle>ทดสอบกลยุทธ์ย้อนหลัง กับ Indicator</CardTitle>
+              <CardDescription>รันกลยุทธ์ทดสอบบนข้อมูล {klines.length.toLocaleString()} แท่งเทียนที่โหลดไว้</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <div className="space-y-3">
+                {/* Strategy buttons */}
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-2">เลือกกลยุทธ์ Indicator</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STRATEGIES.map(s => (
+                      <Button
+                        key={s.id}
+                        variant={strategyId === s.id ? "default" : "outline"}
+                        size="sm"
+                        className={`text-[11px] h-8 px-3 ${strategyId === s.id ? "" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => {
+                          setStrategyId(s.id);
+                          setStrategyParams({ ...s.params });
+                          setBtResult(null);
+                        }}
+                      >
+                        {s.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Run controls + PnL */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <Field label="ค่าธรรมเนียม (%)">
+                      <Input type="number" step="0.01" value={feesPct} onChange={e => setFeesPct(e.target.value)} className="w-20" />
+                    </Field>
+                    <Button onClick={runBt} disabled={btRunning || klines.length < 50} className="h-9">
+                      {btRunning ? "กำลังรัน..." : "รัน Backtest"}
+                    </Button>
+                  </div>
+                  {btResult ? (
+                    <span className={`text-lg font-bold tabular-nums ${btResult.totalPnlPct >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      กำไรรวม: {btResult.totalPnlPct >= 0 ? "+" : ""}{btResult.totalPnlPct.toFixed(2)}%
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">กำไรรวม หลัง backtest : —</span>
+                  )}
+                </div>
+                {/* Strategy description */}
+                {(() => {
+                  const strat = STRATEGIES.find(s => s.id === strategyId);
+                  if (!strat) return null;
+                  return (
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-muted-foreground">
+                        <StrategyDesc text={strat.descriptionEn} />
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        <StrategyDesc text={strat.descriptionTh} />
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {/* Strategy-specific parameter inputs */}
+                {/* {Object.keys(strategyParams).length > 0 && (
+                  <div className="flex flex-wrap items-end space-x-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground w-full">ปรับค่าพารามิเตอร���</p>
+                    {Object.entries(strategyParams).map(([key, val]) => (
+                      <Field key={key} label={PARAM_LABELS[key] ?? key}>
+                        <div className="space-y-0.5">
+                          <Input
+                            type="number"
+                            step={key === "period" ? 1 : 1}
+                            min={1}
+                            value={val}
+                            onChange={e => setStrategyParams(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                            className="w-24"
+                          />
+                          {strategyId === "rsi" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "period" && "จำนวนแท่งเทียนที่ใช้คำนวณ (ค่าทั่วไป: 7, 14, 21)"}
+                              {key === "buyThreshold" && "ค่า RSI ต่ำกว่านี้ = สัญญาณซื้อ"}
+                              {key === "sellThreshold" && "ค่า RSI สูงกว่านี้ = สัญญาณขา���"}
+                            </p>
+                          )}
+                          {strategyId === "smc" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "swingSize" && "แท่งเทียนหา pivot หลัก (10-100) — ค่าน้อย=ไว ค่ามาก=จับเทรนด์ใหญ่"}
+                              {key === "internalSize" && "แท่งเทียนหาโครงสร้างย่อย (2-15) — ค���าน้อย=สัญญาณเยอะ ค่ามาก=กรอง noise"}
+                            </p>
+                          )}
+                          {strategyId === "cm_macd" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "fastLength" && "EMA สั้น (6-21) — ค่าน้อย=ไว ค่ามาก=ช้าแต่แม่นยำ"}
+                              {key === "slowLength" && "EMA ยาว (15-50) — ห่างจาก Fast มาก=Histogram แกว่งแรง"}
+                              {key === "signalLength" && "SMA กรองสัญญาณ (3-20) — ค่าน้อย=cross บ่อย ค่ามาก=กรอง noise"}
+                            </p>
+                          )}
+                          {strategyId === "supertrend" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "atrPeriod" && "แท่งเทียนคำนวณ ATR (5-20) — ค่าน้อย=Band ไว ค่���มาก=Band เสถียร"}
+                              {key === "multiplier" && "ตัวคูณ ATR (1.0-6.0) — ค่าน้อย=Band แคบ สัญญาณเยอะ ค่ามาก=Band กว้าง จับเทรนด์ใ���ญ่"}
+                            </p>
+                          )}
+                          {strategyId === "squeeze_momentum" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "bbLength" && "Bollinger Bands period (10-30) — ค่าน้อย=BB แคบ Squeeze บ่อย ���่ามาก=BB กว้าง"}
+                              {key === "bbMult" && "BB Multiplier (1.0-3.0) — ค่าน้อย=BB แคบ ค่ามาก=BB กว้าง"}
+                              {key === "kcLength" && "Keltner Channel period (10-30) — ค่าน้อย=KC ไว ค่ามาก=KC เสถียร"}
+                              {key === "kcMult" && "KC Multiplier (1.0-3.0) — ค่���น้อย=Squeeze ง่าย ���่ามาก=Squeeze ยาก"}
+                            </p>
+                          )}
+                          {strategyId === "msb_ob" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "zigzagLen" && "ZigZag period (5-20) — ค่าน้อย=swing points บ่อย ค่ามาก=จับเทรนด์ใหญ่"}
+                              {key === "fibFactor" && "Fib confirmation (0.1-0.5) — ค่ามาก=ต้อง break แรงกว่าจึงนับเป็น MSB"}
+                            </p>
+                          )}
+                          {strategyId === "support_resistance" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "leftBars" && "Left Bars (5-30) — แท่งซ้ายของ pivot ค่ามาก=S/R แข็งแกร่งกว่า"}
+                              {key === "rightBars" && "Right Bars (5-30) — ���ท่งขวาของ pivot ค่ามาก=ยืนยันชัดกว่าแต่ช้า"}
+                              {key === "volumeThresh" && "Volume % (10-50) — Volume oscillator ขั้นต่ำสำหรับ break ที่มีนัย"}
+                            </p>
+                          )}
+                          {strategyId === "trendlines" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "trendLength" && "Swing Lookback (5-30) — ��่าน้อย=เส้นเทรนด์เปลี่ยนบ่อย ค่ามาก=เสถียร"}
+                              {key === "trendMult" && "Slope Mult (0.5-3.0) — ��่ามาก=เส้นเทรนด์ชันขึ้น break ง่ายขึ้น"}
+                            </p>
+                          )}
+                          {strategyId === "ut_bot" && (
+                            <p className="text-[9px] text-muted-foreground/70">
+                              {key === "keyValue" && "Key Value (0.5-5) — ตัวคู��� ATR ค่าน้อย=ไว ค่ามาก=กรอง noise"}
+                              {key === "utAtrPeriod" && "ATR Period (5-20) — ค��าน้อย=trailing stop ไว ค่ามาก=เรียบกว่า"}
+                            </p>
+                          )}
+                        </div>
+                      </Field>
+                    ))}
+                  </div>
+                )} */}
+
+                {/* RSI explanation */}
+                {strategyId === "rsi" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">RSI (Relative Strength Index) คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      RSI เป็นตัวชี้วัดโมเมนตัม (Momentum Oscillator) ที่วัดความเร็วและขนาดของการเปลี่ยนแปลงราคา
+                      โดยคำนวณจากอัตราส่วนของ <span className="text-emerald-500/80">ค่าเฉลี่ยของราคาที่เพิ่มขึ้น (Average Gain)</span> กับ <span className="text-red-500/80">ค่า���ฉลี่ยของราคาที่ลดลง (Average Loss)</span> ในช่วง Period ที่กำหนด
+                      ค่า RSI อยู่ในช่วง 0-100
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">RSI &lt; {strategyParams.buyThreshold ?? 30} = Oversold (ขายมากเกินไป) → สัญญาณซื้อ</span>
+                      <span className="text-red-500">RSI &gt; {strategyParams.sellThreshold ?? 70} = Overbought (ซื้อมากเกินไป) → สัญญาณขาย</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      สูตร: RSI = 100 - 100 / (1 + AG/AL) โดย AG = ค่าเฉลี่ยกำไร, AL = ค่าเฉลี่ยขาดทุน ในช่วง Period แท่ง
+                    </p>
+                  </div>
+                )}
+
+                {/* SMC explanation */}
+                {strategyId === "smc" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Smart Money Concepts (SMC) [LuxAlgo] คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      SMC เป็นแนวคิดการวิเคราะห์โครงสร้างตลาด (Market Structure) ตามทฤษฎี ICT/Smart Money
+                      โดยตรวจจับจุดกลับตัวของราคา (Pivot Points) แล้ววิเคราะห์ว่าราคาทะลุจุดสำคัญอย่���งไร
+                    </p>
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ Backtest:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → Bullish CHoCH (กลับตัวขึ้น) หรือ Bullish BOS ใน Discount/Equilibrium Zone</span>
+                        <span className="text-red-500">SELL → Bearish CHoCH (กลับตัวลง) หรือ Bearish BOS ใน Premium/Equilibrium Zone</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* CM MacD Ultimate MTF explanation */}
+                {strategyId === "cm_macd" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">CM MacD Ultimate MTF คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      CM MacD Ultimate MTF เป็น MACD เวอร์ชันปรับปรุงโดย ChrisMoody
+                      ที่เพิ่ม <span className="font-medium text-foreground/80">Histogram 4 สี</span> แสดงทิศทางและความแรงของโมเมนตัม
+                    </p>
+                    <div className="space-y-1 text-[10px]">
+                      <p className="font-medium text-foreground/80">สัญญาณ:</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → MACD ตัดขึ้นเหนือ Signal Line (Golden Cross)</span>
+                        <span className="text-red-500">SELL → MACD ตัดลงใต�� Signal Line (Death Cross)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Supertrend explanation */}
+                {strategyId === "supertrend" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Supertrend คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Supertrend เป็นตัวชี้วัดแบบ Trend-Following ที่ใช้ ATR สร้างแถบราคาบน-ล่าง
+                      เมื่อราคาทะลุแถบจะเกิดสัญญาณเปลี่ยนเทรนด์
+                    </p>
+                    <div className="space-y-1 text-[10px]">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → เทรนด์เปลี่ยนจากขาลงเป็นขาข��้น</span>
+                        <span className="text-red-500">SELL → เทรนด์เปลี่ยน��ากขาขึ้นเป็นขาลง</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Squeeze Momentum explanation */}
+                {strategyId === "squeeze_momentum" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Squeeze Momentum Indicator [LazyBear] คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      เมื่อ Bollinger Bands หดตัวเข้าไปอยู่ภายใน Keltner Channels = ตลาดกำลังบีบตัว (Squeeze)
+                      เมื่อ Squeeze คลายตัว ราคามักจะพุ่งแรงไปในทิศทางของ Momentum
+                    </p>
+                    <div className="space-y-1 text-[10px]">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → Momentum ข้ามขึ้นเหนือ 0</span>
+                        <span className="text-red-500">SELL → Momentum ข้ามลงใต�� 0</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MSB-OB explanation */}
+                {strategyId === "msb_ob" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Market Structure Break &amp; Order Block (MSB-OB) คื��อะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      ใช้ ZigZag ตรวจจับ Swing Points แล้ววิเคราะห์ว่าราคา Break โครงสร้างตลาดเมื่อไหร่ (MSB)
+                    </p>
+                    <div className="space-y-1 text-[10px]">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span className="text-emerald-500">BUY → Bullish MSB (โครงสร้างเปลี่ยนเป็นขาข���้น)</span>
+                        <span className="text-red-500">SELL → Bearish MSB (โครงสร้���งเปลี่ยนเป็นขาลง)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* S/R explanation */}
+                {strategyId === "support_resistance" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Support &amp; Resistance Levels with Breaks [LuxAlgo] คืออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      ตรวจจับ Pivot High/Low เพื่อวาดเส้น Resistance และ Support
+                      เมื่อราคาทะลุเส้นพร้อม Volume ที่สูง = สัญญาณ Break ที่มีนัยสำคัญ
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → ทะลุ Resistance + Volume สูง</span>
+                      <span className="text-red-500">SELL → หลุด Support + Volume สูง</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Trendlines explanation */}
+                {strategyId === "trendlines" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">Trendlines with Breaks [LuxAlgo] คือ���ะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      วาดเส้น Trendline แบบ Dynamic จาก Pivot Points โดยใช้ ATR/Stdev เป็นความชัน
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → ราคาทะลุขึ้นเหนือเส้นแนวต้าน (Upper Break)</span>
+                      <span className="text-red-500">SELL �� ราคาหลุดลงใต้เส้นแนวรับ (Lower Break)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* UT Bot explanation */}
+                {strategyId === "ut_bot" && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <p className="text-[11px] font-medium text-foreground/90">UT Bot Alerts ค��ออะไร?</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      ใช้ ATR Trailing Stop ที่ปรับตัวตามทิศทางราคา เมื่อราคาข้ามผ่าน trailing stop = สัญญาณเปลี่ยนเทรนด์
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="text-emerald-500">BUY → ราคาข้ามข���้นเหนือ ATR Trailing Stop</span>
+                      <span className="text-red-500">SELL �� ราคาข้ามลงใต้ ATR Trailing Stop</span>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Backtest Results */}
+        {btResult && <BacktestResults result={btResult} />}
+
+        {/* Stats */}
+        {trades.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-[10px] text-muted-foreground">Orders ทั้งหมด</p>
+                <p className="text-lg font-bold">{trades.length}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-[10px] text-muted-foreground">BUY สำเร็จ</p>
+                <p className="text-lg font-bold text-green-600">{stats.buys}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-[10px] text-muted-foreground">SELL สำเร็จ</p>
+                <p className="text-lg font-bold text-red-500">{stats.sells}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <p className="text-[10px] text-muted-foreground">ล้มเหลว</p>
+                <p className="text-lg font-bold text-yellow-500">{stats.failed}</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Sub-components
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Backtest Results ──────────────────────────────────────────
+function BacktestResults({ result }: { result: BacktestResult }) {
+  const [tradePage, setTradePage] = useState(0);
+  const tradePageSize = 20;
+  const totalTradePages = Math.ceil(result.trades.length / tradePageSize);
+  const displayedTrades = result.trades.slice(tradePage * tradePageSize, (tradePage + 1) * tradePageSize);
+
+  const strategyBetter = result.totalPnlPct > result.buyAndHoldPct;
+
+  return (
+    <div className="space-y-4">
+      {/* P&L Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="กำไร/ขาดทุนรวม" value={`${result.totalPnlPct >= 0 ? "+" : ""}${result.totalPnlPct.toFixed(2)}%`} color={pnlColor(result.totalPnlPct)} bg={pnlBg(result.totalPnlPct)} />
+        <StatCard label="ซื้อแล้วถือ" value={`${result.buyAndHoldPct >= 0 ? "+" : ""}${result.buyAndHoldPct.toFixed(2)}%`} color={pnlColor(result.buyAndHoldPct)} bg={pnlBg(result.buyAndHoldPct)} />
+        <StatCard label="อัตราชนะ" value={`${result.winRate.toFixed(1)}%`} color={result.winRate >= 50 ? "text-emerald-500" : "text-red-500"} />
+        <StatCard label="จำนวนเทรด" value={`${result.totalTrades} (ชนะ:${result.wins} แพ้:${result.losses})`} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="กำไรเฉลี่ย" value={`+${result.avgWinPct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+        <StatCard label="ขาดทุนเฉลี่ย" value={`${result.avgLossPct.toFixed(2)}%`} color="text-red-500" size="sm" />
+        <StatCard label="เทรดที่ดีที่สุด" value={`+${result.bestTradePct.toFixed(2)}%`} color="text-emerald-500" size="sm" />
+        <StatCard label="เทรดที่แย่ที่สุด" value={`${result.worstTradePct.toFixed(2)}%`} color="text-red-500" size="sm" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3">
+        <StatCard label="Profit Factor" value={result.profitFactor === Infinity ? "INF" : result.profitFactor.toFixed(2)} color={result.profitFactor > 1 ? "text-emerald-500" : "text-red-500"} />
+        <StatCard label="Drawdown สูงสุด" value={`-${result.maxDrawdownPct.toFixed(2)}%`} color="text-red-500" size="sm" />
+        <StatCard label="Sharpe" value={result.sharpeRatio.toFixed(3)} color={result.sharpeRatio > 0 ? "text-emerald-500" : "text-red-500"} size="sm" />
+      </div>
+
+      {/* Strategy vs Buy&Hold comparison */}
+      <Card size="sm" className={strategyBetter ? "ring-emerald-500/30" : "ring-red-500/30"}>
+        <CardContent className="py-3">
+          <div className="flex items-center gap-3 text-xs">
+            <span className={`text-sm font-semibold ${strategyBetter ? "text-emerald-500" : "text-red-500"}`}>
+              {strategyBetter ? "กลยุทธ์ชนะ ซื้อแล้วถือ" : "ซื้อแล้วถือ ชนะกลยุทธ์"}
+            </span>
+            <span className="text-muted-foreground">
+              กลยุทธ์: {result.totalPnlPct >= 0 ? "+" : ""}{result.totalPnlPct.toFixed(2)}% vs ซื้อถือ: {result.buyAndHoldPct >= 0 ? "+" : ""}{result.buyAndHoldPct.toFixed(2)}%
+              (ต่าง {strategyBetter ? "+" : ""}{(result.totalPnlPct - result.buyAndHoldPct).toFixed(2)}%)
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Equity Curve */}
+      <Card size="sm">
+        <CardHeader className="border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle>กราฟเงินทุน (กำไร/ขาดทุนสะสม %)</CardTitle>
+            <span className={`text-lg font-bold tabular-nums ${pnlColor(result.totalPnlPct)}`}>
+              กำไรรวม: {result.totalPnlPct >= 0 ? "+" : ""}{result.totalPnlPct.toFixed(2)}%
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-3">
+          <EquityChart curve={result.equityCurve} trades={result.trades} />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {result.trades.map((t, i) => (
+              <span
+                key={i}
+                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium tabular-nums ${t.pnlPct >= 0
+                  ? "bg-emerald-500/10 text-emerald-500"
+                  : "bg-red-500/10 text-red-500"
+                  }`}
+              >
+                #{i + 1} {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%
+              </span>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Trade History */}
+      <Card size="sm">
+        <CardHeader className="border-b">
+          <CardTitle>ประวัติการเทรด</CardTitle>
+          <CardDescription>ทั้งหมด {result.trades.length} รายการ</CardDescription>
+          {totalTradePages > 1 && (
+            <CardAction>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="xs" onClick={() => setTradePage(p => Math.max(0, p - 1))} disabled={tradePage === 0}>ก่อนหน้า</Button>
+                <span className="text-[10px] tabular-nums text-muted-foreground">{tradePage + 1}/{totalTradePages}</span>
+                <Button variant="outline" size="xs" onClick={() => setTradePage(p => Math.min(totalTradePages - 1, p + 1))} disabled={tradePage >= totalTradePages - 1}>ถัดไป</Button>
+              </div>
+            </CardAction>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">#</TableHead>
+                <TableHead>เวลาเข้า</TableHead>
+                <TableHead className="text-right">ราคาเข้า</TableHead>
+                <TableHead>เวลาออก</TableHead>
+                <TableHead className="text-right">ราคาออก</TableHead>
+                <TableHead className="text-right">กำไร/ขาดทุน %</TableHead>
+                <TableHead className="text-right">แท่ง</TableHead>
+                <TableHead>เหตุผล</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayedTrades.map((t, i) => (
+                <TableRow key={i} className={t.pnlPct > 0 ? "bg-emerald-500/[0.03]" : t.pnlPct < 0 ? "bg-red-500/[0.03]" : ""}>
+                  <TableCell className="text-muted-foreground tabular-nums">{tradePage * tradePageSize + i + 1}</TableCell>
+                  <TableCell className="text-muted-foreground">{fmtDate(t.entryTime)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtPrice(t.entryPrice)}</TableCell>
+                  <TableCell className="text-muted-foreground">{fmtDate(t.exitTime)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtPrice(t.exitPrice)}</TableCell>
+                  <TableCell className={`text-right tabular-nums font-medium ${pnlColor(t.pnlPct)}`}>
+                    {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}%
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{t.bars}</TableCell>
+                  <TableCell className="text-[10px] text-muted-foreground max-w-40 truncate">{t.reason}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
