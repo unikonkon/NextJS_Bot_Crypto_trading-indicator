@@ -128,6 +128,32 @@ export default function BinanceTradingPage() {
   const [balances, setBalances] = useState<Balance[]>([]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
+  const [assetPrices, setAssetPrices] = useState<Record<string, string>>({});
+  const [loadingPriceAsset, setLoadingPriceAsset] = useState<string | null>(null);
+
+  // ─── Fetch asset price (vs USDT) ──────────────────────────
+  const fetchAssetPrice = async (asset: string) => {
+    if (asset === "USDT") {
+      setAssetPrices((prev) => ({ ...prev, [asset]: "1" }));
+      return;
+    }
+    setLoadingPriceAsset(asset);
+    try {
+      const res = await fetch(
+        `/api/binance/price?symbol=${encodeURIComponent(asset + "USDT")}`
+      );
+      const data = await res.json();
+      if (res.ok && data.price) {
+        setAssetPrices((prev) => ({ ...prev, [asset]: data.price }));
+      } else {
+        setAssetPrices((prev) => ({ ...prev, [asset]: "N/A" }));
+      }
+    } catch {
+      setAssetPrices((prev) => ({ ...prev, [asset]: "N/A" }));
+    } finally {
+      setLoadingPriceAsset(null);
+    }
+  };
 
   // Order state
   const [orderCoin, setOrderCoin] = useState("BTC");
@@ -799,6 +825,7 @@ export default function BinanceTradingPage() {
                         <TableHead>Asset</TableHead>
                         <TableHead className="text-right">Free</TableHead>
                         <TableHead className="text-right">Locked</TableHead>
+                        <TableHead className="text-right">Price (USDT)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -817,6 +844,53 @@ export default function BinanceTradingPage() {
                               </span>
                             ) : (
                               <span className="text-muted-foreground">0</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {assetPrices[b.asset] !== undefined ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span
+                                  className={`font-mono text-xs ${
+                                    assetPrices[b.asset] === "N/A"
+                                      ? "text-muted-foreground"
+                                      : "text-green-500"
+                                  }`}
+                                >
+                                  {assetPrices[b.asset] === "N/A"
+                                    ? "N/A"
+                                    : parseFloat(assetPrices[b.asset]).toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 8,
+                                      })}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => fetchAssetPrice(b.asset)}
+                                  disabled={loadingPriceAsset === b.asset}
+                                >
+                                  {loadingPriceAsset === b.asset ? (
+                                    <SpinnerIcon className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <ArrowsClockwiseIcon className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[10px] px-2"
+                                onClick={() => fetchAssetPrice(b.asset)}
+                                disabled={loadingPriceAsset === b.asset}
+                              >
+                                {loadingPriceAsset === b.asset ? (
+                                  <SpinnerIcon className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  "ดูราคา"
+                                )}
+                              </Button>
                             )}
                           </TableCell>
                         </TableRow>
