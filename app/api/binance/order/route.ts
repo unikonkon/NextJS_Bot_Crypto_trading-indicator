@@ -65,6 +65,35 @@ export async function POST(request: NextRequest) {
     const data = await safeJson(res);
 
     if (!res.ok) {
+      // ถ้าเป็น LOT_SIZE filter failure ลองดึง exchangeInfo มาแนบให้ FE แสดงค่า min/step
+      if (
+        data?.code === -1013 &&
+        typeof data?.msg === "string" &&
+        data.msg.includes("LOT_SIZE")
+      ) {
+        try {
+          const infoRes = await fetch(
+            `${BINANCE_BASE}/api/v3/exchangeInfo?symbol=${encodeURIComponent(
+              orderParams.symbol as string
+            )}`,
+            { cache: "no-store" }
+          );
+          const infoData = await infoRes.json();
+          const lotFilter = infoData?.symbols?.[0]?.filters?.find(
+            (f: { filterType: string }) => f.filterType === "LOT_SIZE"
+          );
+          if (lotFilter) {
+            data.filter = {
+              minQty: lotFilter.minQty,
+              maxQty: lotFilter.maxQty,
+              stepSize: lotFilter.stepSize,
+            };
+          }
+        } catch {
+          // เงียบไว้ — ไม่อยากบดบัง error เดิม
+        }
+      }
+
       return NextResponse.json(
         { error: "Order failed", details: data },
         { status: res.status }

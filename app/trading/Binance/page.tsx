@@ -97,7 +97,16 @@ interface OrderResult {
   executedQty?: string;
   cummulativeQuoteQty?: string;
   error?: string;
-  details?: { msg: string; code: number };
+  details?: {
+    msg: string;
+    code: number;
+    filter?: {
+      minQty?: string;
+      maxQty?: string;
+      stepSize?: string;
+      minNotional?: string;
+    };
+  };
 }
 
 type ConnectionSource = "manual" | null;
@@ -1243,6 +1252,36 @@ export default function BinanceTradingPage() {
                               <p className="pl-6 text-muted-foreground">
                                 มูลค่า Order ต่ำกว่าขั้นต่ำที่ Binance กำหนด (ประมาณ 5 USDT) — ต้องเพิ่มจำนวนเหรียญหรือใช้คู่เทรดอื่น
                               </p>
+                            )}
+                            {orderResult.details?.code === -1013 && orderResult.details?.msg?.includes("LOT_SIZE") && (
+                              <div className="pl-6 text-muted-foreground space-y-1">
+                                <p>
+                                  จำนวนเหรียญไม่ผ่านเงื่อนไข <span className="font-mono">LOT_SIZE</span> ของคู่เทรดนี้ — Binance กำหนดให้:
+                                </p>
+                                <ul className="list-disc pl-4 space-y-0.5">
+                                  <li>
+                                    จำนวนต้อง <b>ไม่ต่ำกว่า minQty</b> (ขั้นต่ำที่ส่งได้)
+                                  </li>
+                                  <li>
+                                    จำนวนต้อง <b>ไม่เกิน maxQty</b> (ขั้นสูงสุดที่ส่งได้)
+                                  </li>
+                                  <li>
+                                    จำนวนต้องเป็น <b>ผลคูณของ stepSize</b> (เช่น stepSize 0.001 ส่ง 0.0015 ไม่ได้ ต้องเป็น 0.001, 0.002, ...)
+                                  </li>
+                                </ul>
+                                {orderResult.details &&
+                                  "filter" in orderResult.details &&
+                                  (orderResult.details as { filter?: { minQty?: string; maxQty?: string; stepSize?: string } }).filter && (
+                                    <p className="font-mono text-[11px] pt-1">
+                                      ของคู่นี้: minQty={(orderResult.details as { filter: { minQty?: string } }).filter.minQty}
+                                      {" "}stepSize={(orderResult.details as { filter: { stepSize?: string } }).filter.stepSize}
+                                      {" "}maxQty={(orderResult.details as { filter: { maxQty?: string } }).filter.maxQty}
+                                    </p>
+                                  )}
+                                <p className="text-[11px]">
+                                  วิธีแก้: ปัดจำนวนให้ลงตัวกับ stepSize (เช่นใช้ <span className="font-mono">Math.floor(qty / step) * step</span>) หรือเปลี่ยนไปใช้โหมด USDT (Market) แทน
+                                </p>
+                              </div>
                             )}
                             {orderResult.details?.code === -1121 && (
                               <p className="pl-6 text-muted-foreground">
